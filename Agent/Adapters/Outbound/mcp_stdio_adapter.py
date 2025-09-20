@@ -13,8 +13,8 @@ class MCPStdioClient(_BaseMCPClient):
         params = StdioServerParameters(**stdio_server_params)
         transport = stdio_client(params)
         await self.connect_transport(transport)
-        logger.info("✅ stdio MCP client connected")
+        logger.info("stdio MCP client connected")
 
     async def disconnect(self):
         await super().disconnect()
-        logger.info("✅ stdio MCP client disconnected")
+        logger.info("stdio MCP client disconnected")

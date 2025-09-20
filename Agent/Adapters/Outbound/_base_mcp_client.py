@@ -25,7 +25,7 @@ class _BaseMCPClient(MCPClient):
     # Internal service task: open transport, wrap in ClientSession, init
     async def _service(self, transport_cm, ready: anyio.Event):
         async with AsyncExitStack() as stack:
-            # 1) open raw transport   (stdio / http / …)
+            # 1) open raw transport   (stdio / http)
             r, w, *_ = await stack.enter_async_context(transport_cm)
             # 2) wrap into MCP session
             self._session = await stack.enter_async_context(ClientSession(r, w))

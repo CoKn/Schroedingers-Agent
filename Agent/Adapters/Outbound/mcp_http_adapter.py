@@ -11,8 +11,8 @@ class MCPHttpClient(_BaseMCPClient):
     async def connect(self, url: str):
         transport = streamablehttp_client(url=url)
         await self.connect_transport(transport)
-        logger.info("✅ HTTP MCP client connected")
+        logger.info("HTTP MCP client connected")
 
     async def disconnect(self):
         await super().disconnect()
-        logger.info("✅ HTTP MCP client disconnected")
+        logger.info("HTTP MCP client disconnected")

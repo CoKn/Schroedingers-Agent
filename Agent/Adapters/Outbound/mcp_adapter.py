@@ -72,7 +72,7 @@ class MCPAdapter(BaseModel):
 
                 # register that client's tools
                 await self._register_tools_from_server(server_name, client, server_type)
-                logger.info(f"✅ Connected to {server_type} server: {server_name}")
+                logger.info(f"Connected to {server_type} server: {server_name}")
 
             except Exception as e:
                 logger.error(f"Failed to connect to server {server_name}: {e}")
@@ -112,7 +112,7 @@ class MCPAdapter(BaseModel):
         for server_name, server_info in self.clients.items():
             try:
                 await server_info["client"].disconnect()
-                logger.info(f"✅ Disconnected from {server_name}")
+                logger.info(f"Disconnected from {server_name}")
             except Exception as e:
                 logger.error(f"Error disconnecting from {server_name}: {e}")
         
@@ -146,7 +146,7 @@ class MCPAdapter(BaseModel):
             # Re-register tools
             await self._register_tools_from_server(server_name, client, config["type"])
             
-            logger.info(f"✅ Reconnected to {server_name}")
+            logger.info(f"Reconnected to {server_name}")
             return True
             
         except Exception as e:

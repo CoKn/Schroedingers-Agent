@@ -22,8 +22,8 @@ dotenv.load_dotenv()
 
 azure_client = AzureOpenAIAdapter(
     endpoint=os.getenv("AZURE_ENDPOINT"),
-    api_key=os.getenv("AZURE_API_KEY"),
-    deployment_name="gpt-4o-mini",
+    api_key=os.getenv("AZURE_API_KEY"), 
+    deployment_name=os.getenv("LLM_MODEL"),
     api_version=os.getenv("AZURE_API_VERSION"),
 )
 

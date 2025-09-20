@@ -9,7 +9,7 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 async def verify_token(
     creds: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
 ):
-    """Raise 401 unless the client sent `Authorization: Bearer <token>`."""
+    """Raise 401 unless the client sent Authorization: Bearer <token>."""
     correct = os.getenv("API_BEARER_TOKEN")
     if creds is None or creds.scheme.lower() != "bearer" or creds.credentials != correct:
         raise HTTPException(
