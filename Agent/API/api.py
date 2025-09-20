@@ -143,7 +143,6 @@ async def health_check():
         "mcp_ready": getattr(app.state, 'mcp_ready', False)
     }
 
-
 # list tools
 @protected.get("/tools")
 async def list_tools():
