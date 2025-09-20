@@ -11,6 +11,8 @@ import logging
 from Agent.API.deps import verify_token, auth_ws
 from Agent.Adapters.Outbound.azure_openai_adapter import AzureOpenAIAdapter
 from Agent.Adapters.Outbound.mcp_adapter import MCPAdapter
+from Agent.Domain.agent_service import AgentService
+from Agent.Domain.agent_lifecycle import AgentSession
 
 logging.basicConfig(
     level=logging.INFO,
@@ -149,6 +151,23 @@ async def list_tools():
     return mcp_client.get_tools_json()
 
 
+@protected.post("/agent")
+async def agent_run(req: PromptRequest):
+    if not getattr(app.state, 'mcp_ready', False):
+        raise HTTPException(status_code=503, detail="MCP services not available")
+
+    try:
+        service = AgentService(llm=azure_client, mcp=mcp_client)
+        session = AgentSession(user_prompt=req.prompt, max_steps=3)
+        result, trace = await asyncio.wait_for(service.run(session), timeout=60.0)
+        return {"result": result, "trace": trace}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=500, detail="Operation timed out")
+    except Exception as e:
+        logger.error(f"Agent run failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    
 app.include_router(protected)
 
 

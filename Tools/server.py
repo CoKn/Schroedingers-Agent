@@ -1,9 +1,8 @@
 from fastmcp import FastMCP
 
-# Stateless HTTP server: no session persistence, JSON-only responses
+# Persistent session HTTP server for streamable-http transport
 mcp = FastMCP(
     name="Math tools",
-    stateless_http=True,
     json_response=True
 )
 

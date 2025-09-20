@@ -11,6 +11,7 @@ import json
 import logging
 import asyncio
 from pathlib import Path
+from deprecated import deprecated
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,6 +154,7 @@ class MCPAdapter(BaseModel):
             logger.error(f"Failed to reconnect to {server_name}: {e}")
             return False
     
+    @deprecated
     async def process_query(self, prompt: str, websocket=None, summary: bool = True, trace: bool = True):
         logger.info(f"[STEP 1] Starting process_query with prompt: {prompt}")
         query_trace: dict[str, str | None] = {"prompt": prompt, 
@@ -294,6 +296,19 @@ class MCPAdapter(BaseModel):
     def get_available_tools(self) -> List[str]:
         """Get list of all available tool names."""
         return [tool["name"] for tool in self.tools_registry]
+    
+    async def execute_tool(self, name: str, args: Dict[str, Any]) -> str:
+        """Execute a registered tool by name and return its textual result."""
+        tool_info = next((tool for tool in self.tools_registry if tool["name"] == name), None)
+        if not tool_info:
+            raise ValueError(f"Tool '{name}' not found")
+        result = await tool_info["session"].call_tool(name, args)
+        if hasattr(result, 'content'):
+            if isinstance(result.content, list) and len(result.content) > 0:
+                first_content = result.content[0]
+                return first_content.text if hasattr(first_content, 'text') else str(first_content)
+            return str(result.content)
+        return str(result)
     
     async def startup_mcp(self):
         """Initialize MCP connections at startup"""
