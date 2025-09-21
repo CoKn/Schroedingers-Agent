@@ -34,7 +34,11 @@ def on_executed(session: AgentSession, observation: str) -> AgentSession:
 
 def on_summarised(session: AgentSession) -> AgentSession:
     session.step_index += 1
-    session.state = AgentState.DONE
+    # Continue planning until max_steps reached
+    if session.step_index < session.max_steps:
+        session.state = AgentState.PLANNING
+    else:
+        session.state = AgentState.DONE
     return session
 
 

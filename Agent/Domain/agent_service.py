@@ -4,6 +4,7 @@ import asyncio
 import json
 from typing import Callable
 
+from Agent.Domain.agent_state_enum import AgentState
 from Agent.Ports.Outbound.llm_interface import LLM
 from Agent.Domain.agent_lifecycle import (
     AgentSession,
@@ -105,3 +106,8 @@ class AgentService:
             system_prompt="",
             json_mode=False,
         )
+
+
+    async def loop_run(self, session: AgentSession):
+        while session.state != AgentState.DONE or session.state != AgentState.ERROR:
+            self.run(session=session)

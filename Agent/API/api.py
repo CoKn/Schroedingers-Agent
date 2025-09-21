@@ -158,8 +158,8 @@ async def agent_run(req: PromptRequest):
 
     try:
         service = AgentService(llm=azure_client, mcp=mcp_client)
-        session = AgentSession(user_prompt=req.prompt, max_steps=3)
-        result, trace = await asyncio.wait_for(service.run(session), timeout=60.0)
+        session = AgentSession(user_prompt=req.prompt, max_steps=5)
+        result, trace = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
         return {"result": result, "trace": trace}
     except asyncio.TimeoutError:
         raise HTTPException(status_code=500, detail="Operation timed out")
