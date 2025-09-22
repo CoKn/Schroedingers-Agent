@@ -12,6 +12,8 @@ class AgentSession(BaseModel):
     last_decision: Optional[dict] = None
     last_observation: Optional[str] = None
     trace: List[dict] = []
+    terminate: bool = False
+    goal_reached: bool = False
 
 
 def start(session: AgentSession) -> AgentSession:
