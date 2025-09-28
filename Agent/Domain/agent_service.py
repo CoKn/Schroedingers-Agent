@@ -50,7 +50,7 @@ class AgentService:
                 "Before selecting a tool, evaluate if the goal is already achieved or blocked by missing user input or external constraints.\n"
                 "- If blocked (e.g., address incomplete, return_to_sender, missing consent/payment), do NOT proceed with operational actions that depend on that input.\n"
                 "  Instead, either return {\"terminate\": true, \"reason\": ""} to stop, or choose a communication tool like send_message to request the needed information.\n"
-                "- If the goal is achieved, return {\"goal_reached\": true}."
+                "- If all goals are achieved, return {\"goal_reached\": true}."
             )
 
         system_prompt = (
@@ -107,7 +107,7 @@ class AgentService:
         )
 
     async def loop_run(self, session: AgentSession, progress: ProgressCb | None = None):
-        """Multi-step ReAct controller. Repeats plan→act→summarise up to max_steps or until DONE/ERROR."""
+        """Multi-step ReAct controller. Repeats planc -> act -> summarise up to max_steps or until DONE/ERROR."""
         try:
             start(session)
 
@@ -151,9 +151,6 @@ class AgentService:
                     "observation": summary,
                 })
 
-                # Note: termination is decided during planning; no token-based detection here.
-
-                # Advance lifecycle
                 on_summarised(session)
                 # If lifecycle sets DONE immediately but steps remain, continue planning
                 if session.state == AgentState.DONE and session.step_index < session.max_steps:
