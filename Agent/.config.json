@@ -1,6 +1,6 @@
 [
   {
-    "math_tools": {
+    "customer_support": {
       "type": "http",
       "url": "http://localhost:8081/mcp/"
     }

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 # MCP server
 # --------------------------------------------------------------------
 mcp = FastMCP(
-    name="Marketing Tools",
+    name="Customer Support",
     json_response=True
 )
 
