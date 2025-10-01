@@ -8,7 +8,7 @@ class AzureOpenAIAdapter(LLM, BaseModel):
     api_key: str
     endpoint: str
     deployment_name: str
-    api_version: Optional[str]=None
+    api_version: Optional[str] = None
     _client: AzureOpenAI = PrivateAttr()
 
     def __init__(self, **data):

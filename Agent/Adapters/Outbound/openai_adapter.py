@@ -1,28 +1,23 @@
 from Agent.Ports.Outbound.llm_interface import LLM
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, PrivateAttr
-from typing import Optional
 import asyncio
+
 
 class OpenAIAdapter(LLM, BaseModel):
     """
-    Adapter for the public OpenAI API (non-Azure).
+    Adapter for the public OpenAI API.
     Mirrors the interface of AzureOpenAIAdapter for drop-in replacement.
     """
     api_key: str
-    model: str
+    deployment_name: str
     _client: OpenAI = PrivateAttr()
 
     def __init__(self, **data):
         super().__init__(**data)
-        client_args = {
-            "api_key": self.api_key,
-        }
-        if self.base_url:
-            client_args["base_url"] = self.base_url
-        if self.organization:
-            client_args["organization"] = self.organization
-        self._client = OpenAI(**client_args)
+        self._client = OpenAI(
+            api_key=self.api_key
+        )
 
     def call(
         self,
@@ -44,7 +39,7 @@ class OpenAIAdapter(LLM, BaseModel):
             ]
             resp = self._client.chat.completions.create(
                 messages=messages,
-                model=self.model,
+                model=self.deployment_name,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
@@ -75,7 +70,7 @@ class OpenAIAdapter(LLM, BaseModel):
             ]
             stream = self._client.chat.completions.create(
                 messages=messages,
-                model=self.model,
+                model=self.deployment_name,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,

@@ -10,6 +10,7 @@ import logging
 
 from Agent.API.deps import verify_token, auth_ws
 from Agent.Adapters.Outbound.azure_openai_adapter import AzureOpenAIAdapter
+from Agent.Adapters.Outbound.openai_adapter import OpenAIAdapter
 from Agent.Adapters.Outbound.mcp_adapter import MCPAdapter
 from Agent.Domain.agent_service import AgentService
 from Agent.Domain.agent_lifecycle import AgentSession
@@ -22,14 +23,27 @@ logger = logging.getLogger(__name__)
 
 dotenv.load_dotenv()
 
-azure_client = AzureOpenAIAdapter(
-    endpoint=os.getenv("AZURE_ENDPOINT"),
-    api_key=os.getenv("AZURE_API_KEY"), 
-    deployment_name=os.getenv("LLM_MODEL"),
-    api_version=os.getenv("AZURE_API_VERSION"),
-)
 
-mcp_client = MCPAdapter(llm=azure_client)
+provider = os.getenv("LLM_PROVIDER")
+
+if provider == "OPENAI":
+    llm_client = OpenAIAdapter(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        deployment_name=os.getenv("LLM_MODEL")
+    )
+
+elif provider == "AZURE_OPENAI":
+    llm_client = AzureOpenAIAdapter(
+        endpoint=os.getenv("AZURE_ENDPOINT"),
+        api_key=os.getenv("AZURE_API_KEY"), 
+        deployment_name=os.getenv("LLM_MODEL"),
+        api_version=os.getenv("AZURE_API_VERSION"),
+    )
+else:
+    raise ValueError("LLM_PROVIDER environment variable is required")
+
+
+mcp_client = MCPAdapter(llm=llm_client)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,7 +67,7 @@ class PromptRequest(BaseModel):
 @protected.post("/call")
 async def call_llm(req: PromptRequest):
     # Note: you could also call through mcp if you wrap azure_client as a tool
-    result: str = azure_client.call(
+    result: str = llm_client.call(
         prompt=req.prompt,
         system_prompt="You are a helpful assistant."
     )
@@ -67,7 +81,7 @@ async def call_llm_with_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
         prompt = await websocket.receive_text()
         
         # Stream the response using the new streaming method
-        async for chunk in azure_client.call_stream(
+        async for chunk in llm_client.call_stream(
             prompt=prompt,
             system_prompt="You are a helpful assistant."
         ):
@@ -157,7 +171,7 @@ async def agent_run(req: PromptRequest):
         raise HTTPException(status_code=503, detail="MCP services not available")
 
     try:
-        service = AgentService(llm=azure_client, mcp=mcp_client)
+        service = AgentService(llm=llm_client, mcp=mcp_client)
         session = AgentSession(user_prompt=req.prompt, max_steps=5)
         result, trace = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
         return {"result": result, "trace": trace}

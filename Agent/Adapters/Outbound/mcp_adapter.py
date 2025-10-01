@@ -2,6 +2,8 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, List, Any
 from Agent.Adapters.Outbound.azure_openai_adapter import AzureOpenAIAdapter
+from Agent.Adapters.Outbound.openai_adapter import OpenAIAdapter
+
 from Agent.Adapters.Outbound.mcp_http_adapter import MCPHttpClient
 from Agent.Adapters.Outbound.mcp_stdio_adapter import MCPStdioClient
 
@@ -25,7 +27,7 @@ class MCPAdapter(BaseModel):
     # Store multiple clients with their identifiers
     clients: Dict[str, Any] = {}
     tools_registry: List[Dict[str, Any]] = []
-    llm: Optional[AzureOpenAIAdapter] = None
+    llm: Optional[AzureOpenAIAdapter] | Optional[OpenAIAdapter] = None
     
     async def init(self, server_configs: List[Dict[str, Any]]):
         """
