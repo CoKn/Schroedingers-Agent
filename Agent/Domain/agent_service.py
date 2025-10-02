@@ -45,12 +45,13 @@ class AgentService:
             prev_tool = session.last_decision.get("call_function") if session.last_decision else None
 
             context_note = (
-                f"Goal: ({session.user_prompt}) previous step ({session.step_index}): tool={prev_tool} produced: {session.last_observation}" + structured_hints + "\n"
+                f"Goal: ({session.user_prompt}) previous step ({session.step_index}): tool={prev_tool} produced: {session.last_observation}" + "\n"
                 "Choose the NEXT best tool toward the user's goal. Avoid repeating the same tool consecutively unless needed.\n"
                 "Before selecting a tool, evaluate if the goal is already achieved or blocked by missing user input or external constraints.\n"
-                "- If blocked (e.g., address incomplete, return_to_sender, missing consent/payment), do NOT proceed with operational actions that depend on that input.\n"
-                "  Instead, either return {\"terminate\": true, \"reason\": ""} to stop, or choose a communication tool like send_message to request the needed information.\n"
-                "- If all goals are achieved, return {\"goal_reached\": true}."
+                "- If blocked, do NOT proceed with operational actions that depend on that input.\n"
+                "- Instead, either return {\"terminate\": true, \"reason\": ""} to stop, or choose a communication tool like send_message to request the needed information.\n"
+                "- If all goals are achieved, return {\"goal_reached\": true}. \n"
+                "Do NOT terminate unless no available tool can make progress."
             )
 
         system_prompt = (
