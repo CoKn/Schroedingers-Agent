@@ -2,7 +2,13 @@
   {
     "customer_support": {
       "type": "http",
-      "url": "http://localhost:8081/mcp/"
+      "url": "http://localhost:8081/mcp"
+    }
+  },
+  {
+    "newsapi_everything": {
+      "type": "http",
+      "url": "http://localhost:8082/mcp"
     }
   }
 ]

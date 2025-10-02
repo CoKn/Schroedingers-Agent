@@ -1,0 +1,2 @@
+1) Starting the MCP Tools
+Use command --> python Tools/mcp_newsapi_everything.py
