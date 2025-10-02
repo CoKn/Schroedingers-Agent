@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
+import logging
 from typing import Callable
+
+from Agent.Domain.prompts.context_prompt import context_prompt
+from Agent.Domain.prompts.goal_decomposition_prompt import goal_decomposition_prompt
+from Agent.Domain.prompts.system_prompt import system_prompt
 
 from Agent.Domain.agent_state_enum import AgentState
 from Agent.Ports.Outbound.llm_interface import LLM
@@ -15,6 +19,13 @@ from Agent.Domain.agent_lifecycle import (
     on_summarised,
     on_error,
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 ProgressCb = Callable[[str], None]
 
@@ -35,33 +46,25 @@ class AgentService:
         finally:
             session.max_steps = original_max
 
-    async def _plan(self, session: AgentSession) -> dict:
+    async def _plan(self, session: AgentSession) -> dict:        
         tool_docs = "\n\n".join(
             f"{t['name']}: {t['description']}\nInput schema: {t['schema']}" for t in session.tools_meta
         )
 
-        context_note = ""
+        context_note_formated = ""
         if session.step_index > 0 and session.last_observation is not None:
             prev_tool = session.last_decision.get("call_function") if session.last_decision else None
 
-            context_note = (
-                f"Goal: ({session.user_prompt}) previous step ({session.step_index}): tool={prev_tool} produced: {session.last_observation}" + "\n"
-                "Choose the NEXT best tool toward the user's goal. Avoid repeating the same tool consecutively unless needed.\n"
-                "Before selecting a tool, evaluate if the goal is already achieved or blocked by missing user input or external constraints.\n"
-                "- If blocked, do NOT proceed with operational actions that depend on that input.\n"
-                "- Instead, either return {\"terminate\": true, \"reason\": ""} to stop, or choose a communication tool like send_message to request the needed information.\n"
-                "- If all goals are achieved, return {\"goal_reached\": true}. \n"
-                "Do NOT terminate unless no available tool can make progress."
+            context_note_formated = context_prompt.format(
+                user_prompt=session.user_prompt,
+                step_index=session.step_index,
+                prev_tool=prev_tool,
+                last_observation=session.last_observation
             )
 
-        system_prompt = (
-            "You orchestrate MCP tools step-by-step.\n"
-            "Return exactly one JSON object with either:\n"
-            "- { \"call_function\": \"<tool_name>\", \"arguments\": { ... } }\n"
-            "- or { \"goal_reached\": true } when the user's goal has been achieved,\n"
-            "- or { \"terminate\": true, \"reason\": \"<brief reason>\" } when it's impossible or inappropriate to proceed.\n\n"
-            f"{context_note}\n"
-            f"Available tools:\n{tool_docs}"
+        system_prompt_formated = system_prompt.format(
+            context_note=context_note_formated,
+            tool_docs=tool_docs
         )
 
         planning_prompt = (
@@ -72,10 +75,19 @@ class AgentService:
         resp = await asyncio.to_thread(
             self.llm.call,
             prompt=planning_prompt,
-            system_prompt=system_prompt,
+            system_prompt=system_prompt_formated,
             json_mode=True,
         )
-        return json.loads(resp)
+
+        # logger.warning(f"LLM Response: {resp}")
+        try:
+            parsed = json.loads(resp)
+            # logger.warning(f"JSON parsed successfully: {parsed}")
+            return parsed
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed: {e}")
+            logger.error(f"Raw response: {repr(resp)}")
+            raise
 
     async def _act(self, decision: dict) -> str:
         fn_name = decision["call_function"]
