@@ -71,7 +71,7 @@ async def call_llm(req: PromptRequest):
         prompt=req.prompt,
         system_prompt="You are a helpful assistant."
     )
-    return {"result": result, "trace": None}
+    return {"result": result, "trace": None, "plan": None}
 
 @app.websocket("/ws/call")
 async def call_llm_with_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
@@ -173,8 +173,8 @@ async def agent_run(req: PromptRequest):
     try:
         service = AgentService(llm=llm_client, mcp=mcp_client)
         session = AgentSession(user_prompt=req.prompt, max_steps=5)
-        result, trace = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
-        return {"result": result, "trace": trace}
+        result, trace, plan_summary = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
+        return {"result": result, "trace": trace, "plan": plan_summary}
     except asyncio.TimeoutError:
         raise HTTPException(status_code=500, detail="Operation timed out")
     except Exception as e:

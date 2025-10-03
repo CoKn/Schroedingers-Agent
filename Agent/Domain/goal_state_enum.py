@@ -1,8 +1,8 @@
-from enum import Enum
+from enum import Enum, auto
 
 class GoalStatus(Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress" 
-    COMPLETED = "completed"
-    BLOCKED = "blocked"
-    FAILED = "failed"
+    PENDING = auto()
+    IN_PROGRESS = auto()
+    COMPLETED = auto()
+    BLOCKED = auto()
+    FAILED = auto()
