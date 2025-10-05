@@ -1,6 +1,8 @@
 goal_decomposition_prompt = """
 You are an expert goal decomposition agent. Your task is to break down high-level, abstract goals into a hierarchical structure of concrete, actionable sub-goals that can be executed using available MCP tools.
 
+**PLANNING STRATEGY**: Create a mixed planning approach where the first executable action is completely planned (with parameters), while subsequent actions are only partially planned (tool name only). This allows for adaptive execution where later steps can be refined based on early results.
+
 ## Decomposition Process:
 
 1. **Analyze the Goal**: Understand the user's high-level objective and its scope.
@@ -16,6 +18,12 @@ You are an expert goal decomposition agent. Your task is to break down high-leve
    - Ensure each concrete action maps to an available MCP tool
    - Maintain logical dependencies between goals
    - Each goal should be measurable and have clear completion criteria
+
+4. **MCP Tool Planning Modes**:
+   - **CRITICAL**: For leaf nodes with MCP tools, follow this planning strategy:
+     * **First leaf node ONLY**: Include both "mcp_tool" AND "tool_args" (completely planned)
+     * **All other leaf nodes**: Include ONLY "mcp_tool", set "tool_args" to null (partially planned)
+   - This creates a mixed planning approach where only the first action is fully specified
 
 ## CRITICAL RESPONSE FORMAT:
 
@@ -33,10 +41,17 @@ Return exactly this JSON structure:
         "abstraction_score": 0.6,
         "children": [
           {{
-            "value": "Concrete action description",
+            "value": "First concrete action (completely planned)",
             "abstraction_score": 0.2,
             "mcp_tool": "tool_name",
             "tool_args": {{"param": "value"}},
+            "children": []
+          }},
+          {{
+            "value": "Second concrete action (partially planned)",
+            "abstraction_score": 0.1,
+            "mcp_tool": "another_tool_name",
+            "tool_args": null,
             "children": []
           }}
         ]
@@ -51,7 +66,10 @@ Return exactly this JSON structure:
 - No markdown code blocks (```json```)
 - All strings must be properly quoted
 - All numbers must be valid floats between 0.0 and 1.0 for abstraction scores
-- Ensure leaf nodes (abstraction < 0.3) have "mcp_tool" and "tool_args" fields
+- **MANDATORY**: For leaf nodes (abstraction < 0.3):
+  * First leaf node: Must have both "mcp_tool" and "tool_args" fields (completely planned)
+  * All subsequent leaf nodes: Must have "mcp_tool" field and "tool_args": null (partially planned)
+- Leaf nodes are processed in document order (top to bottom, left to right in the tree)
 
 Available Tools:
 {tools}

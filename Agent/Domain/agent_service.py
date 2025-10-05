@@ -8,6 +8,7 @@ from typing import Callable
 from Agent.Domain.prompts.context_prompt import context_prompt
 from Agent.Domain.prompts.goal_decomposition_prompt import goal_decomposition_prompt
 from Agent.Domain.prompts.system_prompt import system_prompt
+from Agent.Domain.prompts.dynamic_parameters import dynamic_parameters_prompt
 
 from Agent.Domain.plan import Tree, Node
 from Agent.Domain.agent_state_enum import AgentState
@@ -37,7 +38,26 @@ class AgentService:
     def __init__(self, llm: LLM, mcp):
         self.llm = llm
         self.mcp = mcp
-
+    
+    def _get_tool_docs(self, tool_name: str = None) -> str:
+        """Get documentation for a specific tool or all tools.
+        
+        Args:
+            tool_name: If provided, returns docs for only this tool.
+                      If None, returns docs for all tools.
+        """
+        if tool_name:
+            # Find the specific tool
+            for tool in self.session.tools_meta:
+                if tool['name'] == tool_name:
+                    return f"{tool['name']}: {tool['description']}\nInput schema: {tool['schema']}"
+            raise ValueError(f"Tool '{tool_name}' not found in available tools")
+        else:
+            # Return all tools
+            return "\n\n".join(
+                f"{t['name']}: {t['description']}\nInput schema: {t['schema']}" 
+                for t in self.session.tools_meta
+            )
 
     # hierarchical planning 
     async def init_plan(self, session: AgentSession):
@@ -83,7 +103,6 @@ class AgentService:
             logger.warning("No executable goals found in plan")
             raise ValueError("Plan decomposition resulted in no executable goals")
 
-
     async def run(self, session: AgentSession, progress: ProgressCb | None = None):
         """Single or multi-step run. Delegates to loop_run to avoid duplication.
         If session.max_steps <= 1, this behaves like a single-iteration call."""
@@ -96,7 +115,16 @@ class AgentService:
             session.max_steps = original_max
 
     async def _plan(self, session: AgentSession) -> dict:
-        """Plan the next action based on current goals and context."""
+        """Plan the next action based on current goals and context.
+        
+        Handles three planning modes:
+        1. Completely planned: tool name + parameters available
+        2. Partially planned: tool name available, parameters need generation
+        3. No planning: both tool name and parameters need generation
+        """
+        # Store session reference for utility functions
+        self.session = session
+        
         # Check if we have more goals to execute
         if not session.executable_plan or len(session.executable_plan) == 0:
             return {"goal_reached": True}
@@ -105,55 +133,106 @@ class AgentService:
         session.active_goal = session.executable_plan.pop(0)
         logger.debug(f"Processing goal: {session.active_goal.value}")
 
-        # If active goal has planned tool, return it for execution
-        if session.active_goal.mcp_tool:
-            logger.debug(f"Using pre-planned tool: {session.active_goal.mcp_tool}")
+        # Prepare context note (reusable for all modes)
+        context_note_formatted = self._format_context_note(session)
+
+        # Mode 1: Completely planned (tool name + parameters)
+        if session.active_goal.mcp_tool and session.active_goal.tool_args:
+            logger.debug(f"Mode 1: Using completely pre-planned tool: {session.active_goal.mcp_tool}")
             return {
                 "call_function": session.active_goal.mcp_tool,
-                "arguments": session.active_goal.tool_args or {}
+                "arguments": session.active_goal.tool_args
             }
         
-        # Otherwise, use LLM to decide on tool
-        tool_docs = "\n\n".join(
-            f"{t['name']}: {t['description']}\nInput schema: {t['schema']}" for t in session.tools_meta
-        )
-
-        context_note_formated = ""
+        # Mode 2: Partially planned (tool name only, need parameters)
+        elif session.active_goal.mcp_tool and session.active_goal.tool_args is None:
+            logger.debug(f"Mode 2: Using partially planned tool, generating parameters: {session.active_goal.mcp_tool}")
+            return await self._generate_tool_parameters(session, context_note_formatted)
+        
+        # Mode 3: No planning (need both tool name and parameters)
+        else:
+            logger.debug("Mode 3: No pre-planning, generating tool selection and parameters")
+            return await self._generate_full_plan(session, context_note_formatted)
+    
+    def _format_context_note(self, session: AgentSession) -> str:
+        """Format context note for LLM prompts (reusable across planning modes)."""
         if session.step_index > 0 and session.last_observation is not None:
             prev_tool = session.last_decision.get("call_function") if session.last_decision else None
-
-             # TODO: check prompts with active goal vs user prompt
-            context_note_formated = context_prompt.format(
+            return context_prompt.format(
                 user_prompt=session.active_goal.value,
                 step_index=session.step_index,
                 prev_tool=prev_tool,
-                last_observation=session.last_observation
+                last_observation=session.last_observation,
+                observation_history=[t["observation"] for t in session.trace]
             )
-
-        system_prompt_formated = system_prompt.format(
-            context_note=context_note_formated,
+        return
+    
+    async def _generate_tool_parameters(self, session: AgentSession, context_note: str) -> dict:
+        """Generate parameters for a pre-selected tool (Mode 2: Partial planning)."""
+        # Get documentation only for the specific tool
+        tool_docs = self._get_tool_docs(session.active_goal.mcp_tool)
+        
+        # Create planning prompt with goal context
+        planning_prompt = (
+            f"User goal: {session.active_goal.value}\n"
+            f"Tool to use: {session.active_goal.mcp_tool}\n"
+            f"Step index: {session.step_index} of {session.max_steps}.\n"
+            "Generate the appropriate parameters for this tool to achieve the goal."
+        )
+        
+        system_prompt_formatted = dynamic_parameters_prompt.format(
+            context_note=context_note,
             tool_docs=tool_docs
         )
-
+        
+        resp = await asyncio.to_thread(
+            self.llm.call,
+            prompt=planning_prompt,
+            system_prompt=system_prompt_formatted,
+            json_mode=True,
+        )
+        
+        try:
+            parsed = json.loads(resp)
+            # Ensure the response uses the pre-selected tool
+            if "call_function" in parsed:
+                parsed["call_function"] = session.active_goal.mcp_tool
+            return parsed
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed for parameter generation: {e}")
+            logger.error(f"Raw response: {repr(resp)}")
+            raise ValueError(f"Failed to parse JSON response: {str(e)}")
+    
+    async def _generate_full_plan(self, session: AgentSession, context_note: str) -> dict:
+        """Generate both tool selection and parameters (Mode 3: No planning)."""
+        # Get documentation for all tools
+        tool_docs = self._get_tool_docs()
+        
         planning_prompt = (
             f"User goal: {session.active_goal.value}\n"
             f"Step index: {session.step_index} of {session.max_steps}."
         )
-
+        
+        system_prompt_formatted = system_prompt.format(
+            context_note=context_note,
+            tool_docs=tool_docs
+        )
+        
         resp = await asyncio.to_thread(
             self.llm.call,
             prompt=planning_prompt,
-            system_prompt=system_prompt_formated,
+            system_prompt=system_prompt_formatted,
             json_mode=True,
         )
-
+        
         try:
             parsed = json.loads(resp)
             return parsed
         except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed: {e}")
+            logger.error(f"JSON parsing failed for full planning: {e}")
             logger.error(f"Raw response: {repr(resp)}")
             raise ValueError(f"Failed to parse JSON response: {str(e)}")
+        
 
     async def _act(self, decision: dict) -> str:
         fn_name = decision["call_function"]
@@ -222,6 +301,9 @@ class AgentService:
     async def loop_run(self, session: AgentSession, progress: ProgressCb | None = None):
         """Multi-step ReAct controller. Repeats plan -> act -> summarise up to max_steps or until DONE/ERROR."""
         try:
+            # Store session reference for dynamic parameter resolution
+            self._current_session = session
+            
             # Initialize hierarchical plan if in hierarchical mode
             if session.planning_mode == PlanningMode.HIERARCHICAL and not session.executable_plan:
                 await self.init_plan(session)
@@ -237,7 +319,9 @@ class AgentService:
             while session.state not in (AgentState.DONE, AgentState.ERROR) and session.step_index < session.max_steps:
                 if progress:
                     progress("Selecting tool...")
+
                 decision = await self._plan(session)
+
                 # Planning-phase completion: stop before acting if planner indicates done/terminate
                 if isinstance(decision, dict) and ("goal_reached" in decision or "terminate" in decision):
                     session.goal_reached = bool(decision.get("goal_reached", False))
@@ -293,3 +377,6 @@ class AgentService:
             if progress:
                 progress(f"Error: {e}")
             return f"Agent error: {e}", getattr(session, "trace", []), None
+        finally:
+            # Clean up session reference
+            self._current_session = None

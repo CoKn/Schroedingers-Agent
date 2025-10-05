@@ -7,4 +7,6 @@ Before selecting a tool, evaluate if the goal is already achieved or blocked by 
 - If all goals are achieved, return {{ "goal_reached": true }}. 
 Do NOT terminate unless no available tool can make progress.
 
+Observation History:
+{observation_history}
 """
