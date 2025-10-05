@@ -8,7 +8,8 @@ mcp = FastMCP(
 
 class Sudoku:
     size: int 
-    board: List[List[int]] 
+    board: List[List[int]]
+    root: int
 
 
     def __init__(self, size: int = 3, board: Optional[List[List[int]]] = None):
@@ -19,7 +20,8 @@ class Sudoku:
             self.size = len(board)
             if len(board) != size or any(len(row) != size for row in board):
                 raise ValueError("board must be sizexsize")
-            self.board = [row[:] for row in board]
+            self.board = [row[:] for row in board]        
+        self.root = int(self.size ** 0.5)
 
     def _get_row(self, r: int) -> List[int]:
         row = self.board[r][:]
@@ -167,11 +169,11 @@ if __name__ == "__main__":
         Parameters
         ----------
         row : int
-            Zero-based row index (0..size-1).
+            row index starting with 1 to the size of the board
         col : int
-            Zero-based column index (0..size-1).
+            column index starting with 1 to the size of the board
         number : int
-            Value to place. Use `0` to clear the cell. Expected range is 0..size.
+            Value to place. Use `0` to clear the cell.
 
         Returns
         -------
@@ -183,6 +185,10 @@ if __name__ == "__main__":
         This function does not validate Sudoku legality (row/column/box rules).
         Callers should ensure `number` is a legal candidate for (row, col) before writing.
         """
+        if sudoku.board[row][col] != 0:
+            return "You can only fill cells that contain a 0."
+        if sudoku.size < sudoku.board[row][col] < 1:
+            return f"You can only fill in numbers that are between {sudoku.size+1} and 0."
         sudoku._fill_cell(row=row, col=col, number=number)
         return sudoku._get_puzzle()
 
