@@ -7,6 +7,9 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+from typing import Optional
+from fastapi.responses import PlainTextResponse
+import contextlib 
 
 from Agent.API.deps import verify_token, auth_ws
 from Agent.Adapters.Outbound.azure_openai_adapter import AzureOpenAIAdapter
@@ -14,6 +17,8 @@ from Agent.Adapters.Outbound.openai_adapter import OpenAIAdapter
 from Agent.Adapters.Outbound.mcp_adapter import MCPAdapter
 from Agent.Domain.agent_service import AgentService
 from Agent.Domain.agent_lifecycle import AgentSession
+
+from Agent.Adapters.Outbound.mcp_http_adapter import oauth_queue
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,13 +52,30 @@ mcp_client = MCPAdapter(llm=llm_client)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        await mcp_client.startup_mcp()
-        app.state.mcp_ready = True
-    except (asyncio.TimeoutError, Exception):
-        app.state.mcp_ready = False
-    
+    app.state.mcp_ready = False
+
+    async def _boot_mcp():
+        try:
+            # this blocks until OAuth completes, but runs in the background
+            await mcp_client.startup_mcp()  # optionally pass a path
+            app.state.mcp_ready = True
+            logger.info("MCP ready. Servers: %s", list(mcp_client.clients.keys()))
+        except Exception:
+            logger.exception("MCP startup FAILED")
+
+    # 👉 run MCP init in the background so the server can start serving routes
+    app.state.mcp_task = asyncio.create_task(_boot_mcp())
+
     yield
+
+    # shutdown
+    try:
+        if app.state.mcp_task and not app.state.mcp_task.done():
+            app.state.mcp_task.cancel()
+            with contextlib.suppress(Exception):
+                await app.state.mcp_task
+    except Exception:
+        pass
     await mcp_client.disconnect_all()
 
 app = FastAPI(lifespan=lifespan)
@@ -62,6 +84,13 @@ protected = APIRouter(dependencies=[Depends(verify_token)])
 class PromptRequest(BaseModel):
     prompt: str
 
+@app.get("/mcp/oauth/callback")
+async def mcp_oauth_callback(
+    code: str = Query(..., description="Authorization code"),
+    state: Optional[str] = Query(None, description="Opaque state")
+):
+    await oauth_queue.put((code, state))
+    return PlainTextResponse("Auth received. You can close this tab.")
 
 # endpoints
 @protected.post("/call")

@@ -267,4 +267,5 @@ if __name__ == "__main__":
         return sorted(possible)
 
 
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8081)
+    if __name__ == "__main__":
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=8081)

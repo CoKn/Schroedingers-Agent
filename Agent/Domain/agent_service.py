@@ -98,7 +98,7 @@ class AgentService:
 
         # 5. set active goal to first executable goal
         if session.executable_plan:
-            session.active_goal = session.executable_plan.pop(0)
+            session.active_goal = session.executable_plan[0]
         else:
             logger.warning("No executable goals found in plan")
             raise ValueError("Plan decomposition resulted in no executable goals")
@@ -259,7 +259,7 @@ class AgentService:
             f"Original query: {session.user_prompt}\n"
             f"Chosen tool: {tool} with args: {args}\n"
             f"Tool returned: {session.last_observation}\n\n"
-            "Please summarise the outcome in plain text."
+            "Please summarise the outcome in plain text. Make sure to include all relevant information like links and ids, which might be usefull later."
         )
         return await asyncio.to_thread(
             self.llm.call,
