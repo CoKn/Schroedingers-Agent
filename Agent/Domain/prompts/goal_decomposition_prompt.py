@@ -29,7 +29,7 @@ You are an expert goal decomposition agent. Your task is to break down high-leve
 ## CRITICAL RESPONSE FORMAT:
 
 You MUST respond with ONLY valid JSON. Do not include any explanatory text, markdown formatting, or code blocks. Your entire response must be parseable JSON starting with {{ and ending with }}.
-
+#TODO: Add to the tree pre-conditions and effects of actions
 Return exactly this JSON structure:
 
 {{

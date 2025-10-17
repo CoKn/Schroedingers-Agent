@@ -61,7 +61,6 @@ class TokenManager:
         # Try stored token
         tokens = await self.storage.get_tokens()
         if tokens and getattr(tokens, "access_token", None):
-            # tokens may provide expires_in or expires_at; be tolerant
             expires_in = getattr(tokens, "expires_in", None)
             expires_at = getattr(tokens, "expires_at", None)
             now = time.time()
@@ -106,7 +105,6 @@ class TokenManager:
         if not access:
             return None
 
-        # Build a minimal OAuthToken-like object expected by storage
         tok = OAuthToken(
             access_token=access,
             token_type=j.get("token_type", "Bearer"),
@@ -130,19 +128,15 @@ class TokenManager:
         if not www_header:
             return False
 
-        # quick parse for resource_metadata and scope
         parts: Dict[str, str] = {}
         for m in re.finditer(r'(\w+)="([^"]+)"', www_header):
             parts[m.group(1)] = m.group(2)
 
         resource_metadata = parts.get("resource_metadata")
-        # If we have resource_metadata and no token_url in config, try to fetch
-        # the metadata to discover a token endpoint (not implemented here - keep minimal)
+
         if resource_metadata and not self.config.get("token_url"):
-            # Minimal implementation: do nothing expensive; caller can preconfigure token_url
             return False
 
-        # If client_credentials configured, try to fetch token using token_url from config
         if self.config.get("type") == "oauth2_client_credentials" and self.config.get("token_url"):
             tok = await self._fetch_client_credentials(resource)
             return tok is not None

@@ -37,7 +37,7 @@ def duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     return results
 
 @mcp.tool()
-def get_website_urls(url: str) -> list[str | AttributeValueList | None]:
+def get_website_urls(url: str) -> List[str | AttributeValueList | None]:
     """Extracts all hyperlinks from a webpage.
 
         This function fetches a webpage from the provided URL, parses the HTML content,
