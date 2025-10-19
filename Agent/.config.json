@@ -10,5 +10,17 @@
       "type": "http",
       "url": "http://localhost:8082/mcp"
     }
+  },
+  {
+    "yahoo_finance": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  },
+  {
+    "alpha_vantage": {
+      "type": "http",
+      "url": "https://mcp.alphavantage.co/mcp?apikey=P4ZV4U0INCBKQN0F&categories=core_stock_apis,alpha_intelligence,fundamental_data,forex,economic_indicators,ping"
+    }
   }
 ]

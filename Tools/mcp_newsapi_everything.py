@@ -1,79 +1,63 @@
-# ---------------------------------------------------------------------------
-# File: Tools/mcp_newsapi_everything.py (annotated)
-# Purpose: Expose a small MCP (Model Context Protocol) server that wraps the
-# NewsAPI "/everything" endpoint and provides a few helper tools
-# (single-page search, pagination, article summarization, ping).
-#
-# How it works (high level):
-# 1) Loads environment variables (via python-dotenv if available).
-# 2) Creates a simple HTTP client (requests.Session) with retries/backoff
-# for rate limits and transient errors.
-# 3) Implements /everything and a paginator over it.
-# 4) Registers MCP tools that call the HTTP client.
-# 5) On __main__, starts an MCP server over streamable-http.
-# ---------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import os
 import time
 import typing as t
 from dataclasses import dataclass
+from enum import Enum
 import requests
 from fastmcp import FastMCP
 from dotenv import load_dotenv
 
 load_dotenv()
 
-HARDCODED_NEWSAPI_KEY = os.getenv("NEWSAPI_KEY_ENV")
-
 try:
-    mcp = FastMCP(name="NewsAPI Everything")
+    mcp = FastMCP(name="NewsAPI")
 except TypeError:
     mcp = FastMCP()
+
+
+# --------------------------- Response Format Enum ---------------------------
+
+class ResponseFormat(str, Enum):
+    """Control the verbosity of tool responses.
+
+    - CONCISE: Returns only essential fields (title, source, date, description, url)
+    - DETAILED: Returns all available article metadata including content snippets
+    """
+    CONCISE = "concise"
+    DETAILED = "detailed"
+
 
 # --------------------------- HTTP client ------------------------------------
 
 @dataclass
 class HTTPResult:
-    """Lightweight container for HTTP responses.
-
-    Attributes:
-    status: HTTP status code (int)
-    json: Parsed JSON body if available, else None
-    text: Raw response text
-    headers: Response headers as a plain dict
-    """
     status: int
     json: dict | list | None
     text: str
     headers: dict[str, str]
 
-class NewsAPIClient:
-    """Minimal NewsAPI client focused on the /everything endpoint.
 
-    This client holds a requests.Session with the API key attached as
-    an X-Api-Key header. It supports simple retries/backoff on transient
-    errors and rate limits (HTTP 429, 5xx).
-    """
-    def __init__(self, api_key: str, base_url: str | None = None, timeout: int = 20):
+class NewsAPIClient:
+    def __init__(self, api_key: str, base_url: str = "https://newsapi.org/v2", timeout: int = 20):
         if not api_key:
             raise ValueError(
-                "Missing API key. Set NEWSAPI_KEY_ENV =<your key> in the environment, "
-                "or put it into HARDCODED_NEWSAPI_KEY."
+                "Missing NewsAPI key. Set NEWSAPI_KEY_ENV environment variable. "
+                "Get a free key at https://newsapi.org/register"
             )
         self.session = requests.Session()
         self.session.headers.update({"X-Api-Key": api_key})
-        self.base_url = (base_url or os.getenv("NEWSAPI_BASE"))
+        self.base_url = base_url
         self.timeout = timeout
 
     def _request(
-        self,
-        method: str,
-        path: str,
-        params: dict[str, t.Any],
-        max_retries: int = 3,
-        backoff_base: float = 1.5,
+            self,
+            method: str,
+            path: str,
+            params: dict[str, t.Any],
+            max_retries: int = 3,
+            backoff_base: float = 1.5,
     ) -> HTTPResult:
         url = f"{self.base_url}/{path.lstrip('/')}"
         attempt = 0
@@ -82,14 +66,13 @@ class NewsAPIClient:
                 method=method, url=url, params=params, timeout=self.timeout
             )
 
-            # Retry on rate limit / transient errors
             if resp.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
                 attempt += 1
                 retry_after = resp.headers.get("Retry-After")
                 try:
-                    sleep_s = float(retry_after) if retry_after else backoff_base**attempt
+                    sleep_s = float(retry_after) if retry_after else backoff_base ** attempt
                 except ValueError:
-                    sleep_s = backoff_base**attempt
+                    sleep_s = backoff_base ** attempt
                 time.sleep(sleep_s)
                 continue
 
@@ -99,23 +82,21 @@ class NewsAPIClient:
                 data = None
             return HTTPResult(resp.status_code, data, resp.text, dict(resp.headers))
 
-    # --------------------------- /everything ---------------------------------
-
     def everything(
-        self,
-        *,
-        q: str | None = None,
-        q_in_title: str | None = None,   # maps to qInTitle
-        search_in: str | None = None,    # "title,description,content"
-        sources: str | None = None,      # comma-separated source ids
-        domains: str | None = None,      # comma-separated hostnames
-        exclude_domains: str | None = None,
-        from_: str | None = None,        # ISO8601 date/time
-        to: str | None = None,           # ISO8601 date/time
-        language: str | None = None,     # e.g. en,de,fr
-        sort_by: str | None = "publishedAt",  # relevancy|popularity|publishedAt
-        page_size: int = 20,             # NewsAPI caps at 100
-        page: int = 1,
+            self,
+            *,
+            q: str | None = None,
+            q_in_title: str | None = None,
+            search_in: str | None = None,
+            sources: str | None = None,
+            domains: str | None = None,
+            exclude_domains: str | None = None,
+            from_: str | None = None,
+            to: str | None = None,
+            language: str | None = None,
+            sort_by: str | None = "publishedAt",
+            page_size: int = 20,
+            page: int = 1,
     ) -> dict:
         params = {
             "q": q,
@@ -133,142 +114,272 @@ class NewsAPIClient:
         }
         params = {k: v for k, v in params.items() if v is not None}
         res = self._request("GET", "/everything", params)
+
         if res.status != 200:
             msg = (res.json.get("message") if isinstance(res.json, dict) else None) or res.text
+            return {"status": "error", "message": msg, "code": res.status}
+
         return t.cast(dict, res.json)
 
-    def paginate_everything(
-        self,
-        *,
-        q: str | None = None,
-        q_in_title: str | None = None,
-        search_in: str | None = None,
-        sources: str | None = None,
-        domains: str | None = None,
-        exclude_domains: str | None = None,
-        from_: str | None = None,
-        to: str | None = None,
-        language: str | None = None,
-        sort_by: str | None = "publishedAt",
-        page_size: int = 100,
-        max_pages: int = 3,
-    ) -> t.Iterator[dict]:
-        """Yield result pages from /everything."""
-        for p in range(1, max_pages + 1):
-            yield self.everything(
-                q=q,
-                q_in_title=q_in_title,
-                search_in=search_in,
-                sources=sources,
-                domains=domains,
-                exclude_domains=exclude_domains,
-                from_=from_,
-                to=to,
-                language=language,
-                sort_by=sort_by,
-                page_size=page_size,
-                page=p,
-            )
 
 def _client() -> NewsAPIClient:
-    api_key = "a22b451ddb5648b0a4d71064308a2bcd"
-    base_url = os.getenv("NEWSAPI_BASE")
-    return NewsAPIClient(api_key=api_key, base_url=base_url)
+    # Use environment variable - NEVER hardcode API keys
+    api_key = os.getenv("NEWSAPI_KEY_ENV")
+    if not api_key:
+        raise ValueError("NEWSAPI_KEY_ENV environment variable not set")
+    return NewsAPIClient(api_key=api_key)
+
+
+def _format_article(article: dict, format: ResponseFormat) -> dict:
+    """Transform article to requested format."""
+    if format == ResponseFormat.CONCISE:
+        return {
+            "title": article.get("title", "No title"),
+            "source": article.get("source", {}).get("name", "Unknown source"),
+            "published_date": article.get("publishedAt", "Unknown date"),
+            "description": article.get("description", "No description available"),
+            "url": article.get("url"),
+        }
+    else:  # DETAILED
+        return {
+            "title": article.get("title"),
+            "source_name": article.get("source", {}).get("name"),
+            "source_id": article.get("source", {}).get("id"),
+            "author": article.get("author"),
+            "description": article.get("description"),
+            "url": article.get("url"),
+            "image_url": article.get("urlToImage"),
+            "published_date": article.get("publishedAt"),
+            "content_snippet": article.get("content"),
+        }
+
 
 # --------------------------- MCP tools --------------------------------------
 
 @mcp.tool()
-def ping() -> dict:
-    """Health check to verify the MCP server is reachable."""
-    return {"ok": True, "tools": ["everything", "paginate_everything", "summarize_articles"]}
-
-@mcp.tool()
-def everything(
-    q: str | None = None,
-    q_in_title: str | None = None,
-    search_in: str | None = None,
-    sources: str | None = None,
-    domains: str | None = None,
-    exclude_domains: str | None = None,
-    from_: str | None = None,
-    to: str | None = None,
-    language: str | None = None,
-    sort_by: str | None = "publishedAt",
-    page_size: int = 20,
-    page: int = 1,
+def newsapi_search(
+        query: str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        language: str = "en",
+        sort_by: str = "relevancy",
+        max_results: int = 20,
+        response_format: ResponseFormat = ResponseFormat.CONCISE,
+        domains: str | None = None,
+        exclude_domains: str | None = None,
 ) -> dict:
-    """NewsAPI /everything search."""
-    return _client().everything(
-        q=q,
-        q_in_title=q_in_title,
-        search_in=search_in,
-        sources=sources,
-        domains=domains,
-        exclude_domains=exclude_domains,
-        from_=from_,
-        to=to,
-        language=language,
-        sort_by=sort_by,
-        page_size=page_size,
-        page=page,
-    )
+    """Search for news articles using NewsAPI.
 
-@mcp.tool()
-def paginate_everything(
-    q: str | None = None,
-    q_in_title: str | None = None,
-    search_in: str | None = None,
-    sources: str | None = None,
-    domains: str | None = None,
-    exclude_domains: str | None = None,
-    from_: str | None = None,
-    to: str | None = None,
-    language: str | None = None,
-    sort_by: str | None = "publishedAt",
-    page_size: int = 100,
-    max_pages: int = 3,
-) -> list[dict]:
-    """Fetch multiple pages from /everything and return a list of page dicts."""
-    pages: list[dict] = []
-    for page in _client().paginate_everything(
-        q=q,
-        q_in_title=q_in_title,
-        search_in=search_in,
-        sources=sources,
-        domains=domains,
-        exclude_domains=exclude_domains,
-        from_=from_,
-        to=to,
-        language=language,
-        sort_by=sort_by,
-        page_size=page_size,
-        max_pages=max_pages,
-    ):
-        pages.append(page)
-    return pages
+    This tool searches across thousands of news sources and returns articles matching
+    your query. Use it to find recent news, research topics, or track specific stories.
 
-@mcp.tool()
-def summarize_articles(articles: list[dict], max_items: int = 10) -> list[dict]:
-    """Trim NewsAPI article objects down to agent-friendly fields."""
-    out: list[dict] = []
-    for a in (articles or [])[: max(0, max_items)]:
-        out.append(
-            {
-                "title": a.get("title"),
-                "url": a.get("url"),
-                "publishedAt": a.get("publishedAt"),
-                "source": (a.get("source") or {}).get("name"),
-                "author": a.get("author"),
-                "description": a.get("description"),
-            }
+    Args:
+        query: Search keywords or phrases. Use quotes for exact phrases (e.g., "climate change").
+               Supports AND/OR/NOT operators (e.g., "bitcoin AND regulation NOT crypto").
+
+        from_date: Start date in ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).
+                   Example: "2025-01-01" for articles from January 1st onwards.
+                   Defaults to articles from the past month if not specified.
+
+        to_date: End date in ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).
+                 Example: "2025-01-15" for articles up to January 15th.
+                 Defaults to current date/time if not specified.
+
+        language: Language code (ISO 639-1). Examples: "en" (English), "de" (German), 
+                  "fr" (French), "es" (Spanish), "zh" (Chinese).
+
+        sort_by: How to order results. Options:
+                 - "relevancy": Most relevant to query (best for research)
+                 - "popularity": Most shared/engaged with (best for trending topics)
+                 - "publishedAt": Most recent first (best for breaking news)
+
+        max_results: Maximum number of articles to return (1-100). Start with 20 for most
+                     queries. Use fewer (5-10) for very specific searches, more (50+) for
+                     comprehensive research. The tool automatically handles pagination.
+
+        response_format: Output verbosity:
+                         - "concise": Title, source, date, description, url (recommended for
+                           most queries - uses ~70% fewer tokens)
+                         - "detailed": All metadata including author, images, content snippets
+
+        domains: Comma-separated list of domains to search within.
+                 Example: "bbc.co.uk,nytimes.com" to only search BBC and NY Times.
+
+        exclude_domains: Comma-separated list of domains to exclude.
+                         Example: "tabloid.com,spam.site" to filter out unreliable sources.
+
+    Returns:
+        Dictionary with:
+        - total_results: Total matching articles found (may exceed max_results)
+        - articles: List of article objects (length up to max_results)
+        - truncated: Boolean indicating if results were limited
+        - message: Helpful context about the search
+
+    Examples:
+        - Breaking news: newsapi_search("Ukraine war", sort_by="publishedAt", max_results=10)
+        - Research topic: newsapi_search("AI safety regulation", from_date="2024-01-01", max_results=50)
+        - Specific source: newsapi_search("climate policy", domains="bbc.co.uk,reuters.com")
+
+    Tips:
+        - For broad topics, start with max_results=20 and refine your query if needed
+        - Use date ranges to focus on recent developments or historical context
+        - Use "concise" format unless you specifically need author/image/content details
+        - Combine with multiple searches rather than requesting 100+ results at once
+    """
+    client = _client()
+
+    # Validate and cap max_results
+    if max_results < 1:
+        return {
+            "status": "error",
+            "message": "max_results must be at least 1. Please provide a positive number."
+        }
+
+    max_results = min(max_results, 100)  # NewsAPI hard limit
+
+    # Calculate pagination
+    page_size = min(max_results, 100)
+    pages_needed = 1
+
+    all_articles = []
+    total_results = 0
+
+    try:
+        # Fetch first page
+        response = client.everything(
+            q=query,
+            from_=from_date,
+            to=to_date,
+            language=language,
+            sort_by=sort_by,
+            page_size=page_size,
+            page=1,
+            domains=domains,
+            exclude_domains=exclude_domains,
         )
-    return out
+
+        if response.get("status") == "error":
+            return {
+                "status": "error",
+                "message": f"NewsAPI error: {response.get('message', 'Unknown error')}. "
+                           f"Check your query syntax and parameters."
+            }
+
+        total_results = response.get("totalResults", 0)
+        articles = response.get("articles", [])
+
+        # Format articles
+        for article in articles[:max_results]:
+            all_articles.append(_format_article(article, response_format))
+
+        result = {
+            "total_results": total_results,
+            "articles": all_articles,
+            "returned_count": len(all_articles),
+            "truncated": total_results > len(all_articles),
+        }
+
+        # Add helpful context message
+        if total_results == 0:
+            result["message"] = (
+                "No articles found. Try: (1) broadening your query, "
+                "(2) removing date restrictions, or (3) checking for typos."
+            )
+        elif total_results > max_results:
+            result["message"] = (
+                f"Found {total_results} total articles but returned {len(all_articles)}. "
+                f"To see more results, make your query more specific or increase max_results."
+            )
+        else:
+            result["message"] = f"Found {total_results} articles matching your query."
+
+        return result
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error searching news: {str(e)}. Please check your parameters and try again."
+        }
+
+
+@mcp.tool()
+def newsapi_get_headlines(
+        country: str = "us",
+        category: str | None = None,
+        max_results: int = 20,
+        response_format: ResponseFormat = ResponseFormat.CONCISE,
+) -> dict:
+    """Get current top headlines from a specific country and/or category.
+
+    Use this tool to quickly see what's making headlines right now in major news outlets.
+    This is optimized for "what's in the news today?" type queries.
+
+    Args:
+        country: 2-letter ISO country code. Examples: "us" (USA), "gb" (UK), "de" (Germany),
+                 "fr" (France), "jp" (Japan), "au" (Australia), "ca" (Canada).
+
+        category: Filter by category. Options: "business", "entertainment", "general",
+                  "health", "science", "sports", "technology". Leave empty for all categories.
+
+        max_results: Number of headlines to return (1-100). Default is 20.
+
+        response_format: Same as newsapi_search - use "concise" for efficiency.
+
+    Returns:
+        Dictionary with articles and metadata, similar to newsapi_search.
+
+    Examples:
+        - US top news: newsapi_get_headlines(country="us")
+        - UK tech news: newsapi_get_headlines(country="gb", category="technology")
+        - Business headlines: newsapi_get_headlines(category="business", max_results=10)
+    """
+    client = _client()
+
+    max_results = min(max(max_results, 1), 100)
+
+    try:
+        response = client.session.get(
+            f"{client.base_url}/top-headlines",
+            params={
+                "country": country,
+                "category": category,
+                "pageSize": min(max_results, 100),
+            },
+            timeout=client.timeout,
+        )
+
+        data = response.json()
+
+        if data.get("status") == "error":
+            return {
+                "status": "error",
+                "message": f"NewsAPI error: {data.get('message')}. "
+                           f"Valid countries: us, gb, de, fr, etc. "
+                           f"Valid categories: business, entertainment, general, health, science, sports, technology."
+            }
+
+        articles = data.get("articles", [])
+        formatted = [_format_article(a, response_format) for a in articles[:max_results]]
+
+        return {
+            "total_results": len(articles),
+            "articles": formatted,
+            "returned_count": len(formatted),
+            "message": f"Current top headlines from {country.upper()}"
+                       + (f" in {category}" if category else ""),
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error fetching headlines: {str(e)}"
+        }
+
 
 if __name__ == "__main__":
     print(
         "[NewsAPI] Starting MCP server on 0.0.0.0:8082 (streamable-http). "
-        "Tools: everything, paginate_everything, summarize_articles, ping, debug_env",
+        "Tools: newsapi_search, newsapi_get_headlines",
         flush=True,
     )
-
     mcp.run(transport="streamable-http", host="0.0.0.0", port=8082)
