@@ -1,4 +1,18 @@
-# Tools/mcp_newsapi_everything.py
+# ---------------------------------------------------------------------------
+# File: Tools/mcp_newsapi_everything.py (annotated)
+# Purpose: Expose a small MCP (Model Context Protocol) server that wraps the
+# NewsAPI "/everything" endpoint and provides a few helper tools
+# (single-page search, pagination, article summarization, ping).
+#
+# How it works (high level):
+# 1) Loads environment variables (via python-dotenv if available).
+# 2) Creates a simple HTTP client (requests.Session) with retries/backoff
+# for rate limits and transient errors.
+# 3) Implements /everything and a paginator over it.
+# 4) Registers MCP tools that call the HTTP client.
+# 5) On __main__, starts an MCP server over streamable-http.
+# ---------------------------------------------------------------------------
+
 from __future__ import annotations
 
 import os
@@ -6,21 +20,13 @@ import time
 import typing as t
 from dataclasses import dataclass
 import requests
-
-# ----- fastmcp compatibility shims ------------------------------------------
 from fastmcp import FastMCP
-
-# ----- env loading & safe defaults ------------------------------------------
 from dotenv import load_dotenv
 
-
-# Load into os.environ if python-dotenv is available
 load_dotenv()
 
-# ---- Hard-coded fallback (set this to your key if you want to bypass env) ---
-# HARDCODED_NEWSAPI_KEY = "a22b451ddb5648b0a4d71064308a2bcd"  # <-- PASTE YOUR KEY HERE (or leave empty to use .env)
 HARDCODED_NEWSAPI_KEY = os.getenv("NEWSAPI_KEY_ENV")
-# ----- create MCP (avoid ctor kwarg issues across versions) -----------------
+
 try:
     mcp = FastMCP(name="NewsAPI Everything")
 except TypeError:
@@ -30,12 +36,26 @@ except TypeError:
 
 @dataclass
 class HTTPResult:
+    """Lightweight container for HTTP responses.
+
+    Attributes:
+    status: HTTP status code (int)
+    json: Parsed JSON body if available, else None
+    text: Raw response text
+    headers: Response headers as a plain dict
+    """
     status: int
     json: dict | list | None
     text: str
     headers: dict[str, str]
 
 class NewsAPIClient:
+    """Minimal NewsAPI client focused on the /everything endpoint.
+
+    This client holds a requests.Session with the API key attached as
+    an X-Api-Key header. It supports simple retries/backoff on transient
+    errors and rate limits (HTTP 429, 5xx).
+    """
     def __init__(self, api_key: str, base_url: str | None = None, timeout: int = 20):
         if not api_key:
             raise ValueError(
