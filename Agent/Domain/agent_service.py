@@ -5,10 +5,12 @@ import json
 import logging
 from typing import Callable
 
-from Agent.Domain.prompts.context_prompt import context_prompt
-from Agent.Domain.prompts.goal_decomposition_prompt import goal_decomposition_prompt
-from Agent.Domain.prompts.system_prompt import system_prompt
-from Agent.Domain.prompts.dynamic_parameters import dynamic_parameters_prompt
+from Agent.Domain.planning.llm_planner import LLMPlanner
+from Agent.Domain.prompts.loader import load_all_prompts
+
+load_all_prompts()
+
+from Agent.Domain.prompts.registry import REGISTRY
 
 from Agent.Domain.plan import Tree, Node
 from Agent.Domain.agent_state_enum import AgentState
@@ -16,7 +18,6 @@ from Agent.Domain.planning_mode_enum import PlanningMode
 from Agent.Ports.Outbound.llm_interface import LLM
 from Agent.Domain.agent_lifecycle import (
     AgentSession,
-    init_plan,
     start,
     on_planned,
     on_executed,
@@ -38,17 +39,33 @@ class AgentService:
     def __init__(self, llm: LLM, mcp):
         self.llm = llm
         self.mcp = mcp
+        self.planner = LLMPlanner(llm=self.llm, get_tool_docs=self._get_tool_docs)
+        # Maintain optional references to the active session to support helper methods
+        self.session: AgentSession | None = None
+        self._current_session: AgentSession | None = None
     
-    def _get_tool_docs(self, tool_name: str = None) -> str:
+    def _get_tool_docs(self, tool_name: str = None, session: AgentSession | None = None) -> str:
         """Get documentation for a specific tool or all tools.
         
         Args:
             tool_name: If provided, returns docs for only this tool.
                       If None, returns docs for all tools.
         """
+        # Resolve a usable session reference
+        sess = session or getattr(self, "session", None) or getattr(self, "_current_session", None)
+        if not sess:
+            raise ValueError("No active session available to retrieve tool docs")
+
+        # Ensure tools metadata is available on the session
+        if not getattr(sess, "tools_meta", None):
+            try:
+                sess.tools_meta = self.mcp.get_tools_json()
+            except Exception as e:
+                raise ValueError(f"Unable to retrieve tools metadata: {e}")
+
         if tool_name:
             # Find the specific tool
-            for tool in self.session.tools_meta:
+            for tool in sess.tools_meta:
                 if tool['name'] == tool_name:
                     return f"{tool['name']}: {tool['description']}\nInput schema: {tool['schema']}"
             raise ValueError(f"Tool '{tool_name}' not found in available tools")
@@ -56,7 +73,7 @@ class AgentService:
             # Return all tools
             return "\n\n".join(
                 f"{t['name']}: {t['description']}\nInput schema: {t['schema']}" 
-                for t in self.session.tools_meta
+                for t in sess.tools_meta
             )
 
     # hierarchical planning 
@@ -66,22 +83,22 @@ class AgentService:
             session.tools_meta = self.mcp.get_tools_json()
             
         # 1. initial prompt is set as root of tree
-        tool_docs = "\n\n".join(
-                f"{t['name']}: {t['description']}\nInput schema: {t['schema']}" for t in session.tools_meta
-            )
+        version = getattr(session, "prompt_profile", {}).get("goal_decomposition", "v1")
+        spec = REGISTRY.get("goal_decomposition", version=version)
+        # Pass session explicitly to avoid relying on instance state before it's set
+        system_prompt = spec.render(tool_docs=self._get_tool_docs(session=session))
         
         # 2. run llm call to generate tree
         resp = await asyncio.to_thread(
             self.llm.call,
             prompt=f"Goal: {session.user_prompt}",
-            system_prompt=goal_decomposition_prompt.format(tools=tool_docs),
+            system_prompt=system_prompt,
             json_mode=True,
         )
 
          # 3. parse response to tree class
         try:
             parsed = json.loads(resp)
-            # parse json to Tree class
             plan: Tree = Tree._parse_json_to_tree(parsed)
 
         except json.JSONDecodeError as e:
@@ -134,7 +151,7 @@ class AgentService:
         logger.debug(f"Processing goal: {session.active_goal.value}")
 
         # Prepare context note (reusable for all modes)
-        context_note_formatted = self._format_context_note(session)
+        context_note_formatted = self.planner.format_context_note(session)
 
         # Mode 1: Completely planned (tool name + parameters)
         if session.active_goal.mcp_tool and session.active_goal.tool_args:
@@ -147,92 +164,12 @@ class AgentService:
         # Mode 2: Partially planned (tool name only, need parameters)
         elif session.active_goal.mcp_tool and session.active_goal.tool_args is None:
             logger.debug(f"Mode 2: Using partially planned tool, generating parameters: {session.active_goal.mcp_tool}")
-            return await self._generate_tool_parameters(session, context_note_formatted)
+            return await self.planner.generate_tool_parameters(session, context_note_formatted)
         
         # Mode 3: No planning (need both tool name and parameters)
         else:
             logger.debug("Mode 3: No pre-planning, generating tool selection and parameters")
-            return await self._generate_full_plan(session, context_note_formatted)
-    
-    def _format_context_note(self, session: AgentSession) -> str:
-        """Format context note for LLM prompts (reusable across planning modes)."""
-        if session.step_index > 0 and session.last_observation is not None:
-            prev_tool = session.last_decision.get("call_function") if session.last_decision else None
-            return context_prompt.format(
-                user_prompt=session.active_goal.value,
-                step_index=session.step_index,
-                prev_tool=prev_tool,
-                last_observation=session.last_observation,
-                observation_history=[t["observation"] for t in session.trace]
-            )
-        return
-    
-    async def _generate_tool_parameters(self, session: AgentSession, context_note: str) -> dict:
-        """Generate parameters for a pre-selected tool (Mode 2: Partial planning)."""
-        # Get documentation only for the specific tool
-        tool_docs = self._get_tool_docs(session.active_goal.mcp_tool)
-        
-        # Create planning prompt with goal context
-        planning_prompt = (
-            f"User goal: {session.active_goal.value}\n"
-            f"Tool to use: {session.active_goal.mcp_tool}\n"
-            f"Step index: {session.step_index} of {session.max_steps}.\n"
-            "Generate the appropriate parameters for this tool to achieve the goal."
-        )
-        
-        system_prompt_formatted = dynamic_parameters_prompt.format(
-            context_note=context_note,
-            tool_docs=tool_docs
-        )
-        
-        resp = await asyncio.to_thread(
-            self.llm.call,
-            prompt=planning_prompt,
-            system_prompt=system_prompt_formatted,
-            json_mode=True,
-        )
-        
-        try:
-            parsed = json.loads(resp)
-            # Ensure the response uses the pre-selected tool
-            if "call_function" in parsed:
-                parsed["call_function"] = session.active_goal.mcp_tool
-            return parsed
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed for parameter generation: {e}")
-            logger.error(f"Raw response: {repr(resp)}")
-            raise ValueError(f"Failed to parse JSON response: {str(e)}")
-    
-    async def _generate_full_plan(self, session: AgentSession, context_note: str) -> dict:
-        """Generate both tool selection and parameters (Mode 3: No planning)."""
-        # Get documentation for all tools
-        tool_docs = self._get_tool_docs()
-        
-        planning_prompt = (
-            f"User goal: {session.active_goal.value}\n"
-            f"Step index: {session.step_index} of {session.max_steps}."
-        )
-        
-        system_prompt_formatted = system_prompt.format(
-            context_note=context_note,
-            tool_docs=tool_docs
-        )
-        
-        resp = await asyncio.to_thread(
-            self.llm.call,
-            prompt=planning_prompt,
-            system_prompt=system_prompt_formatted,
-            json_mode=True,
-        )
-        
-        try:
-            parsed = json.loads(resp)
-            return parsed
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed for full planning: {e}")
-            logger.error(f"Raw response: {repr(resp)}")
-            raise ValueError(f"Failed to parse JSON response: {str(e)}")
-        
+            return await self.planner.generate_full_plan(session, context_note_formatted)
 
     async def _act(self, decision: dict) -> str:
         fn_name = decision["call_function"]
@@ -251,15 +188,23 @@ class AgentService:
             first = tool_result.content[0]
             return getattr(first, "text", str(first))
         return str(tool_result)
-
-    async def _summarise(self, session: AgentSession) -> str:
+    
+    async def _observe(self, session: AgentSession) -> str:
         tool = session.last_decision.get("call_function") if session.last_decision else ""
         args = session.last_decision.get("arguments", {}) if session.last_decision else {}
-        summary_prompt = (
-            f"Original query: {session.user_prompt}\n"
-            f"Chosen tool: {tool} with args: {args}\n"
-            f"Tool returned: {session.last_observation}\n\n"
-            "Please summarise the outcome in plain text. Make sure to include all relevant information like links and ids, which might be usefull later."
+        preconds = getattr(session.active_goal, "assumed_preconditions", []) if session.active_goal else []
+        effects = getattr(session.active_goal, "assumed_effects", []) if session.active_goal else []
+
+        version = getattr(session, "prompt_profile", {}).get("step_summary", "v1")
+        spec = REGISTRY.get("step_summary", version=version)
+        summary_prompt = spec.render(
+            user_prompt=session.user_prompt,
+            current_goal=session.active_goal.value if session.active_goal else "",
+            preconditions_block=preconds,
+            effects_block=effects,
+            tool=tool,
+            args=json.dumps(args, ensure_ascii=False),
+            last_observation=session.last_observation or "",
         )
         return await asyncio.to_thread(
             self.llm.call,
@@ -280,6 +225,8 @@ class AgentService:
                 "status": node.status.name if node.status else None,
                 "mcp_tool": node.mcp_tool,
                 "tool_args": node.tool_args,
+                "assumed_preconditions": node.assumed_preconditions,
+                "assumed_effects": node.assumed_effects,
                 "is_leaf": node.is_leaf(),
                 "is_executable": node.is_executable(),
                 "children": [node_to_dict(child) for child in (node.children or [])]
@@ -294,7 +241,9 @@ class AgentService:
             "current_goal": {
                 "value": session.active_goal.value,
                 "mcp_tool": session.active_goal.mcp_tool,
-                "abstraction_score": session.active_goal.abstraction_score
+                "abstraction_score": session.active_goal.abstraction_score,
+                "assumed_preconditions": getattr(session.active_goal, "assumed_preconditions", None),
+                "assumed_effects": getattr(session.active_goal, "assumed_effects", None),
             } if session.active_goal else None
         }
 
@@ -346,13 +295,16 @@ class AgentService:
 
                 if progress:
                     progress("Summarising response...")
-                summary = await self._summarise(session)
+                summary = await self._observe(session)
                 final_observation = summary
 
+                # Registry design pattern
                 session.trace.append({
                     "step": session.step_index,
                     "goal": session.active_goal.value if session.active_goal else None,
                     "goal_abstraction": session.active_goal.abstraction_score if session.active_goal else None,
+                    "assumed_preconditions": getattr(session.active_goal, "assumed_preconditions", None),
+                    "assumed_effects": getattr(session.active_goal, "assumed_effects", None),
                     "plan": decision,
                     "act": observation,
                     "observation": summary,
@@ -378,5 +330,4 @@ class AgentService:
                 progress(f"Error: {e}")
             return f"Agent error: {e}", getattr(session, "trace", []), None
         finally:
-            # Clean up session reference
             self._current_session = None

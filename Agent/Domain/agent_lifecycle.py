@@ -1,7 +1,7 @@
 from Agent.Domain.agent_state_enum import AgentState
 from Agent.Domain.planning_mode_enum import PlanningMode
 from Agent.Domain.plan import Tree, Node
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 
 
@@ -12,7 +12,7 @@ class AgentSession(BaseModel):
     state: AgentState = AgentState.PLANNING
     max_steps: int = 3
     step_index: int = 0
-    tools_meta: list[dict] = []
+    tools_meta: list[dict] = Field(default_factory=list)
     last_decision: Optional[dict] = None
     last_observation: Optional[str] = None
     trace: List[dict] = []

@@ -147,6 +147,61 @@ async def call_llm_with_mcp(req: PromptRequest):
     except Exception as e:
         logger.error(f"MCP operation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws/agent")
+async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
+    await websocket.accept()
+    try:
+        # Ensure MCP is ready before accepting work
+        if not getattr(app.state, 'mcp_ready', False):
+            await websocket.send_json({"error": "MCP services not available"})
+            return await websocket.close()
+
+        # Receive the prompt to start the agent
+        prompt = await websocket.receive_text()
+
+        service = AgentService(llm=llm_client, mcp=mcp_client)
+        session = AgentSession(user_prompt=prompt, max_steps=5)
+
+        # Progress callback to stream incremental updates
+        def progress_cb(message: str):
+            try:
+                # Schedule send without blocking the agent loop
+                asyncio.create_task(
+                    websocket.send_json({
+                        "event": "progress",
+                        "message": message,
+                        "step": session.step_index
+                    })
+                )
+            except RuntimeError:
+                # Websocket might be closed; ignore further progress
+                pass
+
+        # Run the agent and stream progress; send final payload at the end
+        result, trace, plan_summary = await asyncio.wait_for(
+            service.loop_run(session, progress_cb), timeout=90.0
+        )
+
+        await websocket.send_json({
+            "event": "final",
+            "result": result,
+            "trace": trace,
+            "plan": plan_summary
+        })
+        await websocket.close()
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket connection closed by the client.")
+    except asyncio.TimeoutError:
+        await websocket.send_json({"error": "Operation timed out"})
+        await websocket.close()
+    except Exception as e:
+        logger.error(f"Error during WebSocket agent run: {e}", exc_info=True)
+        with contextlib.suppress(Exception):
+            await websocket.send_json({"error": str(e)})
+        with contextlib.suppress(Exception):
+            await websocket.close()
     
 
 @app.websocket("/ws/call_mcp")

@@ -92,15 +92,15 @@ def get_website_content(url: str) -> str:
     r = requests.get(url)
     soup = BeautifulSoup(r.text, 'html.parser')
 
-    # (a) Remove every <img> tag entirely
+    # Remove every <img> tag entirely
     for img_tag in soup.find_all('img'):
         img_tag.decompose()
 
-    # (b) Remove every <svg> tag entirely
+    # Remove every <svg> tag entirely
     for svg_tag in soup.find_all('svg'):
         svg_tag.decompose()
 
-    # (c) Remove any <a> that wraps only an <img> or <svg> (so no “image links” remain)
+    # Remove any <a> that wraps only an <img> or <svg> (so no “image links” remain)
     for a_tag in soup.find_all('a'):
         if a_tag.find('img') or a_tag.find('svg'):
             a_tag.decompose()

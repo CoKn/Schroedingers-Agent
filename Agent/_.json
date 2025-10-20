@@ -1,5 +1,11 @@
 [
   {
+    "sudoku": {
+      "type": "http",
+      "url": "http://localhost:8081/mcp/"
+    }
+  },
+  {
     "Notion": {
       "type": "http",
       "url": "https://mcp.notion.com/mcp",

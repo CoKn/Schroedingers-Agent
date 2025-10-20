@@ -20,6 +20,9 @@ class Node(BaseModel):
     mcp_tool: Optional[str] = None
     tool_args: Optional[dict] = None
 
+    assumed_preconditions: Optional[List[str]] = Field(default_factory=list)
+    assumed_effects: Optional[List[str]] = Field(default_factory=list)
+
     def model_post_init(self, __context) -> None:
         """Validate abstraction score is within valid range."""
         if self.abstraction_score is not None and not (0.0 <= self.abstraction_score <= 1.0):
@@ -98,17 +101,6 @@ class Tree(BaseModel):
         collect_leaves(self.root)
         return leaves
 
-    
-    def traverse(self):
-        ...
-
-    def _breadth_first_traversal(self):
-        ...
-    
-    def _breadth_first_traversal(self):
-        ...
-
-
     @staticmethod
     def _parse_json_to_tree(json_data: dict) -> 'Tree':
         """Parse JSON response into Tree structure with Node objects."""
@@ -120,7 +112,9 @@ class Tree(BaseModel):
                 value=json_node.get("value", ""),
                 abstraction_score=json_node.get("abstraction_score", 0.0),
                 parent=parent,
-                children=[]
+                children=[],
+                assumed_effects=json_node.get("assumed_effects", []),
+                assumed_preconditions=json_node.get("assumed_preconditions", [])
             )
             
             # Add MCP tool information if present (for leaf nodes)
