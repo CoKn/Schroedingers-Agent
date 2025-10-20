@@ -106,7 +106,7 @@ def get_website_content(url: str) -> str:
             a_tag.decompose()
 
 
-    return convert_to_markdown(str(soup.text))[:500]
+    return convert_to_markdown(str(soup))[:500]
 
 
 if __name__ == "__main__":
