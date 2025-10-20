@@ -33,5 +33,5 @@ Observation History:
 
 PROMPTS = [
     register_prompt("context", kind="system", required_vars={"user_prompt","step_index", "prev_tool", "last_observation", "observation_history"}, version="v1", json_mode=True)(TEMPLATE_V1),
-    register_prompt("context", kind="system", required_vars={"user_prompt","step_index", "prev_tool", "last_observation", "observation_history"}, version="v1", json_mode=True)(TEMPLATE_V2)
+    register_prompt("context", kind="system", required_vars={"user_prompt","step_index", "prev_tool", "last_observation", "observation_history"}, version="v2", json_mode=True)(TEMPLATE_V2)
 ]
