@@ -19,7 +19,7 @@ class AzureOpenAIAdapter(LLM, BaseModel):
             api_version=self.api_version
         )
 
-    def call(self, prompt, system_prompt, json_mode: bool=False, max_tokens: int=20000, temperature: int=0, top_p: int=1) -> str:
+    def call(self, prompt, system_prompt, json_mode: bool=False, max_tokens: int=4096, temperature: int=0, top_p: int=1) -> str:
         if json_mode:
             response_type = 'json_object'
         else:
@@ -47,7 +47,7 @@ class AzureOpenAIAdapter(LLM, BaseModel):
         prompt: str, 
         system_prompt: str, 
         json_mode: bool = False, 
-        max_tokens: int = 10000, 
+        max_tokens: int = 4096, 
         temperature: int = 0, 
         top_p: int = 1
     ):

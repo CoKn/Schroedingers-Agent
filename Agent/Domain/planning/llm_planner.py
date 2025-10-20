@@ -16,7 +16,7 @@ class LLMPlanner:
         self.llm = llm
         self._get_tool_docs = get_tool_docs
 
-    def _observation_history(self, session: AgentSession, N: int = 8) -> list[str]:
+    def _observation_history(self, session: AgentSession, N: int = 4) -> list[str]:
         return [t.get("observation") for t in (session.trace or []) if "observation" in t][-N:]
 
     def format_context_note(self, session: AgentSession) -> str:

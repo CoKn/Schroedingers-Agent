@@ -86,16 +86,21 @@ Preconditions check:
 
 Effects status:
 - Achieved:
-  - List target effects achieved. If none, write 'None'.
+  - For each achieved effect, include the specific values found in the tool output (IDs, URLs, file paths, titles, counts with units, timestamps, key fields from JSON, short excerpts). Use the format: "Effect: value(s)". If none, write 'None'.
 - Missing:
   - List target effects not yet achieved. If uncertain, include them here. If none, write 'None'.
 
 Ready to proceed: yes/no
 - Choose 'no' if any preconditions are unmet or key effects are missing. Provide one-sentence justification.
 
+Extracted results (from tool output):
+- List concrete data points discovered in "Tool returned" using "name: value" format.
+- Include, where applicable: IDs, URLs, file paths, counts/sizes with units, timestamps, titles, key-value pairs from JSON, and the top 3 items for lists.
+- If the output is textual, include a 1-2 line concise excerpt capturing the answer (no more than 200 characters).
+- If nothing extractable, write 'None'.
+
 Facts to know for further steps:
 - List all facts that could be relevant for further steps. Consider both the current and all future tasks.
-
 """
 
 PROMPTS = [
