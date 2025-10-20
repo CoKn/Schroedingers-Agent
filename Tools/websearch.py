@@ -59,7 +59,7 @@ def get_website_urls(url: str) -> List[str | AttributeValueList | None]:
     all_anchors = soup.find_all("a")
     urls = []
     for anchor in all_anchors:
-        if not anchor.get("href", "") != "#":
+        if anchor.get("href", "") == "#":
             continue
 
         elif anchor.get("href", "").startswith('/'):
