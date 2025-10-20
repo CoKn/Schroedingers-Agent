@@ -7,6 +7,9 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+from typing import Optional
+from fastapi.responses import PlainTextResponse
+import contextlib 
 
 from Agent.API.deps import verify_token, auth_ws
 from Agent.Adapters.Outbound.azure_openai_adapter import AzureOpenAIAdapter
@@ -14,6 +17,8 @@ from Agent.Adapters.Outbound.openai_adapter import OpenAIAdapter
 from Agent.Adapters.Outbound.mcp_adapter import MCPAdapter
 from Agent.Domain.agent_service import AgentService
 from Agent.Domain.agent_lifecycle import AgentSession
+
+from Agent.Adapters.Outbound.mcp_http_adapter import oauth_queue
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,13 +52,30 @@ mcp_client = MCPAdapter(llm=llm_client)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        await mcp_client.startup_mcp()
-        app.state.mcp_ready = True
-    except (asyncio.TimeoutError, Exception):
-        app.state.mcp_ready = False
-    
+    app.state.mcp_ready = False
+
+    async def _boot_mcp():
+        try:
+            # this blocks until OAuth completes, but runs in the background
+            await mcp_client.startup_mcp()  # optionally pass a path
+            app.state.mcp_ready = True
+            logger.info("MCP ready. Servers: %s", list(mcp_client.clients.keys()))
+        except Exception:
+            logger.exception("MCP startup FAILED")
+
+    # 👉 run MCP init in the background so the server can start serving routes
+    app.state.mcp_task = asyncio.create_task(_boot_mcp())
+
     yield
+
+    # shutdown
+    try:
+        if app.state.mcp_task and not app.state.mcp_task.done():
+            app.state.mcp_task.cancel()
+            with contextlib.suppress(Exception):
+                await app.state.mcp_task
+    except Exception:
+        pass
     await mcp_client.disconnect_all()
 
 app = FastAPI(lifespan=lifespan)
@@ -62,6 +84,13 @@ protected = APIRouter(dependencies=[Depends(verify_token)])
 class PromptRequest(BaseModel):
     prompt: str
 
+@app.get("/mcp/oauth/callback")
+async def mcp_oauth_callback(
+    code: str = Query(..., description="Authorization code"),
+    state: Optional[str] = Query(None, description="Opaque state")
+):
+    await oauth_queue.put((code, state))
+    return PlainTextResponse("Auth received. You can close this tab.")
 
 # endpoints
 @protected.post("/call")
@@ -71,7 +100,7 @@ async def call_llm(req: PromptRequest):
         prompt=req.prompt,
         system_prompt="You are a helpful assistant."
     )
-    return {"result": result, "trace": None}
+    return {"result": result, "trace": None, "plan": None}
 
 @app.websocket("/ws/call")
 async def call_llm_with_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
@@ -118,6 +147,61 @@ async def call_llm_with_mcp(req: PromptRequest):
     except Exception as e:
         logger.error(f"MCP operation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws/agent")
+async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
+    await websocket.accept()
+    try:
+        # Ensure MCP is ready before accepting work
+        if not getattr(app.state, 'mcp_ready', False):
+            await websocket.send_json({"error": "MCP services not available"})
+            return await websocket.close()
+
+        # Receive the prompt to start the agent
+        prompt = await websocket.receive_text()
+
+        service = AgentService(llm=llm_client, mcp=mcp_client)
+        session = AgentSession(user_prompt=prompt, max_steps=5)
+
+        # Progress callback to stream incremental updates
+        def progress_cb(message: str):
+            try:
+                # Schedule send without blocking the agent loop
+                asyncio.create_task(
+                    websocket.send_json({
+                        "event": "progress",
+                        "message": message,
+                        "step": session.step_index
+                    })
+                )
+            except RuntimeError:
+                # Websocket might be closed; ignore further progress
+                pass
+
+        # Run the agent and stream progress; send final payload at the end
+        result, trace, plan_summary = await asyncio.wait_for(
+            service.loop_run(session, progress_cb), timeout=90.0
+        )
+
+        await websocket.send_json({
+            "event": "final",
+            "result": result,
+            "trace": trace,
+            "plan": plan_summary
+        })
+        await websocket.close()
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket connection closed by the client.")
+    except asyncio.TimeoutError:
+        await websocket.send_json({"error": "Operation timed out"})
+        await websocket.close()
+    except Exception as e:
+        logger.error(f"Error during WebSocket agent run: {e}", exc_info=True)
+        with contextlib.suppress(Exception):
+            await websocket.send_json({"error": str(e)})
+        with contextlib.suppress(Exception):
+            await websocket.close()
     
 
 @app.websocket("/ws/call_mcp")
@@ -173,8 +257,8 @@ async def agent_run(req: PromptRequest):
     try:
         service = AgentService(llm=llm_client, mcp=mcp_client)
         session = AgentSession(user_prompt=req.prompt, max_steps=5)
-        result, trace = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
-        return {"result": result, "trace": trace}
+        result, trace, plan_summary = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
+        return {"result": result, "trace": trace, "plan": plan_summary}
     except asyncio.TimeoutError:
         raise HTTPException(status_code=500, detail="Operation timed out")
     except Exception as e:
