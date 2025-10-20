@@ -195,7 +195,7 @@ class AgentService:
         preconds = getattr(session.active_goal, "assumed_preconditions", []) if session.active_goal else []
         effects = getattr(session.active_goal, "assumed_effects", []) if session.active_goal else []
 
-        version = getattr(session, "prompt_profile", {}).get("step_summary", "v1")
+        version = getattr(session, "prompt_profile", {}).get("step_summary", "v2")
         spec = REGISTRY.get("step_summary", version=version)
         summary_prompt = spec.render(
             user_prompt=session.user_prompt,
@@ -205,6 +205,7 @@ class AgentService:
             tool=tool,
             args=json.dumps(args, ensure_ascii=False),
             last_observation=session.last_observation or "",
+            plan=session.executable_plan
         )
         return await asyncio.to_thread(
             self.llm.call,

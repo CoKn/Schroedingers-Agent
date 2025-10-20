@@ -24,5 +24,5 @@ Available tools:
 
 
 PROMPTS = [
-    register_prompt("system", kind="system", required_vars={"context_note","tool_docs"}, json_mode=True)(TEMPLATE_V1),
+    register_prompt("system", kind="system", required_vars={"context_note","tool_docs"}, version="v1", json_mode=True)(TEMPLATE_V1),
 ]

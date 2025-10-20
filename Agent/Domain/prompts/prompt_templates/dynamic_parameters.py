@@ -58,5 +58,5 @@ Guidelines for parameter generation:
 
 
 PROMPTS = [
-    register_prompt("dynamic_parameters", kind="system", required_vars={"context_note","tool_docs"}, json_mode=True)(TEMPLATE_V1),
+    register_prompt("dynamic_parameters", kind="system", required_vars={"context_note","tool_docs"}, version="v1", json_mode=True)(TEMPLATE_V1),
 ]
