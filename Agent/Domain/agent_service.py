@@ -299,7 +299,6 @@ class AgentService:
                 summary = await self._observe(session)
                 final_observation = summary
 
-                # Registry design pattern
                 session.trace.append({
                     "step": session.step_index,
                     "goal": session.active_goal.value if session.active_goal else None,

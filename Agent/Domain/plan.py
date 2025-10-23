@@ -44,7 +44,6 @@ class Node(BaseModel):
         return self.children
 
 
-
 # a tree constitues a hierarchical plan for the agent with its decomposed goal
 class Tree(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)

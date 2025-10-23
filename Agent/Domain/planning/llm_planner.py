@@ -54,17 +54,17 @@ class LLMPlanner:
         pre = getattr(session.active_goal, "assumed_preconditions", []) or []
         eff = getattr(session.active_goal, "assumed_effects", []) or []
 
-        planning_prompt = (
-            f"User goal: {session.active_goal.value}\n"
-            f"Tool to use: {session.active_goal.mcp_tool}\n"
-            f"Step index: {session.step_index} of {session.max_steps}.\n"
-            + (f"Assumed preconditions:\n- " + "\n- ".join(pre) + "\n" if pre else "")
-            + (f"Desired effects/outcomes:\n- " + "\n- ".join(eff) + "\n" if eff else "")
-            + "Generate the appropriate parameters for this tool to achieve the goal, "
-              "taking the preconditions and desired effects into account."
+        planning_spec = REGISTRY.get("planning", version="v1")
+        planning_prompt = planning_spec.render(
+            user_goal=session.active_goal.value if session.active_goal else "",
+            tool_name=session.active_goal.mcp_tool if session.active_goal else None,
+            step_index=session.step_index,
+            max_steps=session.max_steps,
+            preconditions=pre,
+            effects=eff,
         )
 
-        dyn_spec = REGISTRY.get("dynamic_parameters")  # id from your self-registered prompt
+        dyn_spec = REGISTRY.get("dynamic_parameters")
         sys_prompt = dyn_spec.render(context_note=context_note, tool_docs=tool_docs)
 
         resp = await asyncio.to_thread(
@@ -84,13 +84,14 @@ class LLMPlanner:
         pre = getattr(session.active_goal, "assumed_preconditions", []) or []
         eff = getattr(session.active_goal, "assumed_effects", []) or []
 
-        planning_prompt = (
-            f"User goal: {session.active_goal.value}\n"
-            f"Step index: {session.step_index} of {session.max_steps}.\n"
-            + (f"Assumed preconditions:\n- " + "\n- ".join(pre) + "\n" if pre else "")
-            + (f"Desired effects/outcomes:\n- " + "\n- ".join(eff) + "\n" if eff else "")
-            + "Select the most appropriate tool and parameters considering the preconditions "
-              "and targeting the desired effects."
+        planning_spec = REGISTRY.get("planning", version="v1")
+        planning_prompt = planning_spec.render(
+            user_goal=session.active_goal.value if session.active_goal else "",
+            tool_name=None,
+            step_index=session.step_index,
+            max_steps=session.max_steps,
+            preconditions=pre,
+            effects=eff,
         )
 
         plan_spec = REGISTRY.get("system")
