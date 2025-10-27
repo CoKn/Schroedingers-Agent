@@ -63,7 +63,6 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("MCP startup FAILED")
 
-    # 👉 run MCP init in the background so the server can start serving routes
     app.state.mcp_task = asyncio.create_task(_boot_mcp())
 
     yield

@@ -95,7 +95,7 @@ Return exactly this JSON structure:
 - **MANDATORY**: For leaf nodes (abstraction < 0.3):
   * First leaf node: Must have both "mcp_tool" and "tool_args" fields (completely planned)
   * All subsequent leaf nodes: Must have "mcp_tool" field and "tool_args": null (partially planned)
-  * ALL leaf nodes: Must include "assumed_preconditions" (array, 1-5 items) and "assumed_effects" (array, 1–5 items)
+  * ALL leaf nodes: Must include "assumed_preconditions" (array, 1-5 items) and "assumed_effects" (array, 1-5 items)
 - Leaf nodes are processed in document order (top to bottom, left to right in the tree)
 
 Available Tools:
