@@ -256,7 +256,7 @@ async def agent_run(req: PromptRequest):
     try:
         service = AgentService(llm=llm_client, mcp=mcp_client)
         session = AgentSession(user_prompt=req.prompt, max_steps=5)
-        result, trace, plan_summary = await asyncio.wait_for(service.loop_run(session), timeout=90.0)
+        result, trace, plan_summary = await asyncio.wait_for(service.loop_run(session), timeout=120.0)
         return {"result": result, "trace": trace, "plan": plan_summary}
     except asyncio.TimeoutError:
         raise HTTPException(status_code=500, detail="Operation timed out")
