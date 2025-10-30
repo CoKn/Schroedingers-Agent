@@ -20,7 +20,7 @@
   {
     "alpha_vantage": {
       "type": "http",
-      "url": "https://mcp.alphavantage.co/mcp?apikey=P4ZV4U0INCBKQN0F&categories=core_stock_apis,alpha_intelligence,fundamental_data,forex,economic_indicators,ping"
+      "url": "https://mcp.alphavantage.co/mcp?apikey=${ALPHAVANTAGE_API_KEY}&categories=core_stock_apis,alpha_intelligence,fundamental_data,forex,economic_indicators,ping"
     }
   }
 ]
