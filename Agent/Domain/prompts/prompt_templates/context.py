@@ -1,6 +1,7 @@
 from Agent.Domain.prompts.registry import register_prompt
 
 
+#TODO: adjust prompt to properly include preconditions 
 TEMPLATE_V1 = """
 Goal: ({user_prompt}) previous step ({step_index}): tool={prev_tool} produced: {last_observation}
 Choose the NEXT best tool toward the user's goal. Avoid repeating the same tool consecutively unless needed.

@@ -11,7 +11,7 @@ from Agent.Domain.prompts.loader import load_all_prompts
 load_all_prompts()
 
 from Agent.Domain.prompts.registry import REGISTRY
-
+from Agent.Domain.utils.json_markdown import json_to_markdown
 from Agent.Domain.plan import Tree, Node
 from Agent.Domain.agent_state_enum import AgentState
 from Agent.Domain.planning_mode_enum import PlanningMode
@@ -27,7 +27,7 @@ from Agent.Domain.agent_lifecycle import (
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -43,6 +43,40 @@ class AgentService:
         # Maintain optional references to the active session to support helper methods
         self.session: AgentSession | None = None
         self._current_session: AgentSession | None = None
+
+    # TODO: Move this function to the plan file into the Node class
+    # --- helpers: plan recording & serialization ---
+    def _node_to_dict(self, node: Node) -> dict:
+        return {
+            "value": node.value,
+            "abstraction_score": node.abstraction_score,
+            "status": node.status.name if node.status else None,
+            "mcp_tool": node.mcp_tool,
+            "tool_args": node.tool_args,
+            "assumed_preconditions": node.assumed_preconditions,
+            "assumed_effects": node.assumed_effects,
+            "is_leaf": node.is_leaf(),
+            "is_executable": node.is_executable(),
+            "children": [self._node_to_dict(child) for child in (node.children or [])]
+        }
+
+    def _record_plan_event(self, session: AgentSession, event_type: str, payload: dict):
+        """Append a plan-related event to the session trace and plan history."""
+        # Ensure trace exists
+        if getattr(session, "trace", None) is None:
+            session.trace = []
+
+        event = {
+            "event": event_type,
+            "step": getattr(session, "step_index", 0),
+            "payload": payload,
+        }
+        session.trace.append(event)
+
+        # Keep a compact rolling plan history as well (optional for downstream UIs)
+        if not hasattr(session, "plan_history") or session.plan_history is None:
+            session.plan_history = []
+        session.plan_history.append({"event": event_type, "payload": payload})
     
     def _get_tool_docs(self, tool_name: str = None, session: AgentSession | None = None) -> str:
         """Get documentation for a specific tool or all tools.
@@ -77,7 +111,7 @@ class AgentService:
             )
 
     # hierarchical planning 
-    async def init_plan(self, session: AgentSession):
+    async def init_plan(self, session: AgentSession, initial=True):
         """Initialize hierarchical plan by decomposing the user goal into executable sub-goals."""
         if not session.tools_meta:
             session.tools_meta = self.mcp.get_tools_json()
@@ -88,10 +122,24 @@ class AgentService:
         # Pass session explicitly to avoid relying on instance state before it's set
         system_prompt = spec.render(tool_docs=self._get_tool_docs(session=session))
         
+        # Incorporate recent observations and step summaries to guide (re-)planning
+        # Reuse the same context note construction used for action planning
+        
+        # if inital planning only use goal else give previous observations as context
+        if initial:
+            prompt=f"Goal: {session.user_prompt}"
+        else:
+            context_note = self.planner.format_context_note(session)
+            prompt= (
+                f"Goal: {session.user_prompt}" +
+                (f"\n\nContext from previous steps:\n{context_note}" if context_note else "")
+            )
+
+        
         # 2. run llm call to generate tree
         resp = await asyncio.to_thread(
             self.llm.call,
-            prompt=f"Goal: {session.user_prompt}",
+            prompt=prompt,
             system_prompt=system_prompt,
             json_mode=True,
         )
@@ -113,12 +161,17 @@ class AgentService:
         session.plan = plan
         session.executable_plan = plan.get_leaves()
 
-        # 5. set active goal to first executable goal
-        if session.executable_plan:
-            session.active_goal = session.executable_plan[0]
-        else:
-            logger.warning("No executable goals found in plan")
-            raise ValueError("Plan decomposition resulted in no executable goals")
+        # Record plan generation into trace/history
+        try:
+            plan_payload = {
+                "kind": "hierarchical",
+                "initial": bool(initial),
+                "tree": self._node_to_dict(session.plan.root) if session.plan and session.plan.root else None,
+                "leaf_count": len(session.executable_plan or []),
+            }
+            self._record_plan_event(session, "plan_generated", plan_payload)
+        except Exception as e:
+            logger.debug(f"Failed to serialize/record plan: {e}")
 
     async def run(self, session: AgentSession, progress: ProgressCb | None = None):
         """Single or multi-step run. Delegates to loop_run to avoid duplication.
@@ -142,11 +195,51 @@ class AgentService:
         # Store session reference for utility functions
         self.session = session
         
-        # Check if we have more goals to execute
+        # If no executable items remain, attempt to re-plan before concluding
         if not session.executable_plan or len(session.executable_plan) == 0:
-            return {"goal_reached": True}
-        
-        # Get next goal from plan
+            # Re-plan throttling to avoid thrash: only one re-plan per step and max N per run
+            current_step = getattr(session, "step_index", 0)
+            last_replan_step = getattr(session, "_last_replan_step", None)
+            replan_attempts = getattr(session, "_replan_attempts", 0)
+            max_replans = getattr(session, "_max_replans", 3)
+
+            should_replan = True
+            if last_replan_step is not None and last_replan_step == current_step:
+                # Already re-planned this step; skip to reactive to avoid thrashing
+                should_replan = False
+            if replan_attempts >= max_replans:
+                should_replan = False
+
+            if should_replan:
+                logger.debug("Executable plan empty; attempting re-plan (throttled)")
+                try:
+                    await self.init_plan(session, initial=False)
+                    setattr(session, "_last_replan_step", current_step)
+                    setattr(session, "_replan_attempts", replan_attempts + 1)
+                except Exception as e:
+                    logger.warning(f"Re-planning failed: {e}")
+
+            # If still no steps (or skipping due to throttle), fall back to reactive planning (Mode 3)
+            if not session.executable_plan or len(session.executable_plan) == 0:
+                logger.debug("No steps available; falling back to reactive planning (tool + args)")
+                context_note_formatted = self.planner.format_context_note(session)
+                decision = await self.planner.generate_full_plan(session, context_note_formatted)
+                # Record reactive plan generation
+                try:
+                    self._record_plan_event(session, "plan_generated", {
+                        "kind": "reactive",
+                        "initial": False,
+                        "decision": decision,
+                    })
+                except Exception as e:
+                    logger.debug(f"Failed to record reactive plan: {e}")
+                return decision
+            else:
+                # Successful re-plan -> reset attempts
+                setattr(session, "_replan_attempts", 0)
+
+        # Get next goal from (potentially refreshed) plan
+        #TODO: redundant setting of goals
         session.active_goal = session.executable_plan.pop(0)
         logger.debug(f"Processing goal: {session.active_goal.value}")
 
@@ -207,11 +300,13 @@ class AgentService:
             last_observation=session.last_observation or "",
             plan=session.executable_plan
         )
+
+        # TODO: tun here json mode on so that I can ckeck if all preconditions are met. Initiate replanning if precondition are not met
         return await asyncio.to_thread(
             self.llm.call,
             prompt=summary_prompt,
             system_prompt="",
-            json_mode=False,
+            json_mode=True,
         )
 
     def _get_plan_summary(self, session: AgentSession) -> dict:
@@ -220,18 +315,7 @@ class AgentService:
             return None
         
         def node_to_dict(node: Node) -> dict:
-            return {
-                "value": node.value,
-                "abstraction_score": node.abstraction_score,
-                "status": node.status.name if node.status else None,
-                "mcp_tool": node.mcp_tool,
-                "tool_args": node.tool_args,
-                "assumed_preconditions": node.assumed_preconditions,
-                "assumed_effects": node.assumed_effects,
-                "is_leaf": node.is_leaf(),
-                "is_executable": node.is_executable(),
-                "children": [node_to_dict(child) for child in (node.children or [])]
-            }
+            return self._node_to_dict(node)
         
         return {
             "planning_mode": session.planning_mode.name,
@@ -254,6 +338,9 @@ class AgentService:
             # Store session reference for dynamic parameter resolution
             self._current_session = session
             
+            # Initialize trace early so we can capture initial plan generation
+            session.trace = []
+
             # Initialize hierarchical plan if in hierarchical mode
             if session.planning_mode == PlanningMode.HIERARCHICAL and not session.executable_plan:
                 await self.init_plan(session)
@@ -263,7 +350,6 @@ class AgentService:
             if not session.tools_meta:
                 session.tools_meta = self.mcp.get_tools_json()
 
-            session.trace = []
             final_observation: str = ""
 
             while session.state not in (AgentState.DONE, AgentState.ERROR) and session.step_index < session.max_steps:
@@ -292,12 +378,22 @@ class AgentService:
                 if progress:
                     progress(f"Executing {decision['call_function']}...")
                 observation = await self._act(decision)
-                on_executed(session, observation)
+                on_executed(session, str(observation))
 
                 if progress:
                     progress("Summarising response...")
+
+                # TODO: after tunring json mode on parse response properly and do checks for the effects here
                 summary = await self._observe(session)
-                final_observation = summary
+                final_observation = json_to_markdown(summary)
+
+                try:
+                    summary_json = json.loads(summary)
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parsing failed: {e}")
+                    logger.error(f"Raw response: {repr(summary)}")
+                    raise ValueError(f"Failed to parse JSON response: {str(e)}")
 
                 session.trace.append({
                     "step": session.step_index,
@@ -307,7 +403,7 @@ class AgentService:
                     "assumed_effects": getattr(session.active_goal, "assumed_effects", None),
                     "plan": decision,
                     "act": observation,
-                    "observation": summary,
+                    "observation": summary_json,
                     "remaining_goals": len(session.executable_plan or [])
                 })
 
@@ -320,6 +416,7 @@ class AgentService:
                 if (session.state == AgentState.DONE and 
                     session.planning_mode == PlanningMode.HIERARCHICAL and 
                     session.executable_plan and len(session.executable_plan) > 0):
+
                     session.state = AgentState.PLANNING
 
             return final_observation, session.trace, self._get_plan_summary(session)
