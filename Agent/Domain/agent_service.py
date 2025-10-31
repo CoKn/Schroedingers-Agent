@@ -45,7 +45,6 @@ class AgentService:
         self._current_session: AgentSession | None = None
 
     # TODO: Move this function to the plan file into the Node class
-    # --- helpers: plan recording & serialization ---
     def _node_to_dict(self, node: Node) -> dict:
         return {
             "value": node.value,
