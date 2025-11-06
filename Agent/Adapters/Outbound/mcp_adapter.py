@@ -13,8 +13,6 @@ import json
 import logging
 import asyncio
 from pathlib import Path
-import os
-import re
 
 logging.basicConfig(
     level=logging.INFO,
@@ -92,18 +90,10 @@ class MCPAdapter(BaseModel):
                     else:
                         # Non-interactive (bearer/api-key/etc.) can use a short timeout
                         try:
-                            if auth_conf:
-                                # Has auth config - pass it
-                                await asyncio.wait_for(
-                                    client.connect(conf["url"], auth_config=auth_conf),
-                                    timeout=30
-                                )
-                            else:
-                                # No auth config (API key in URL) - connect without auth_config
-                                await asyncio.wait_for(
-                                    client.connect(conf["url"]),
-                                    timeout=30
-                                )
+                            await asyncio.wait_for(
+                                client.connect(conf["url"], auth_config=auth_conf),
+                                timeout=30
+                            )
                         except (asyncio.TimeoutError, asyncio.CancelledError):
                             logger.error("Timeout connecting to HTTP server %s", server_name)
                             try:
@@ -261,7 +251,7 @@ class MCPAdapter(BaseModel):
                 return first_content.text if hasattr(first_content, 'text') else str(first_content)
             return str(result.content)
         return str(result)
-
+    
     async def startup_mcp(self):
         """Initialize MCP connections at startup"""
         try:
@@ -299,13 +289,12 @@ class MCPAdapter(BaseModel):
 def load_config(config_path: str = ".config.json") -> List[Dict[str, Any]]:
     """
     Load MCP server configuration from a JSON file.
-    Supports environment variable substitution using ${VAR_NAME} syntax.
 
     Args:
         config_path: Path to the configuration file (default: ".config.json")
 
     Returns:
-        List of server configurations with env vars substituted
+        List of server configurations
 
     Raises:
         FileNotFoundError: If config file doesn't exist
@@ -316,22 +305,7 @@ def load_config(config_path: str = ".config.json") -> List[Dict[str, Any]]:
         if not file_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-        # Read and substitute environment variables
-        config_text = file_path.read_text()
-
-        # Replace ${VAR_NAME} with environment variable values
-        def replace_env_var(match):
-            var_name = match.group(1)
-            value = os.getenv(var_name)
-            if value is None:
-                logger.warning(f"Environment variable {var_name} not found, using empty string")
-                return ""
-            return value
-
-        config_text = re.sub(r'\$\{([^}]+)\}', replace_env_var, config_text)
-
-        # Parse JSON
-        config_data = json.loads(config_text)
+        config_data = json.loads(file_path.read_text())
         logger.info(f"Loaded configuration for {len(config_data)} servers from {config_path}")
         return config_data
 

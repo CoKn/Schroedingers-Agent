@@ -5,9 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "bs4>=0.0.2",
+    "ddgs>=9.6.1",
     "deprecated>=1.2.18",
     "fastapi>=0.116.2",
     "fastmcp>=2.12.3",
+    "html-to-markdown>=2.3.4",
     "mcp>=1.14.1",
     "openai>=1.108.1",
     "pydantic>=2.11.9",
