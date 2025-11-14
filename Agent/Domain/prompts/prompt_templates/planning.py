@@ -30,7 +30,6 @@ def planning_template(vars: Mapping[str, Any]) -> str:
     parts.append(f"Step index: {step_index} of {max_steps}.")
 
     if preconds:
-        # Keep preconditions concise; join with bullets but limit length implicitly by caller
         parts.append("Assumed preconditions:")
         parts.extend(("- " + p) for p in preconds)
 

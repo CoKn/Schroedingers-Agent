@@ -8,7 +8,6 @@ This project exposes a FastAPI service that can:
 - Use MCP tools to ground answers in actions/data
 - Run a multi-step agent with hierarchical planning (plan -> act -> observe)
 
-
 macOS and Python 3.12+ are supported. The LLM can be either Azure OpenAI or OpenAI.
 
 ## Quickstart
