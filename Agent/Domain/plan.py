@@ -10,7 +10,7 @@ class Node(BaseModel):
     
     value: str
     abstraction_score: Optional[float] = None
-    parent: Optional['Node'] = None
+    parent: Optional['Node'] = Field(default=None, exclude=True, repr=False)
     children: Optional[List['Node']] = Field(default_factory=list)
     status: GoalStatus = GoalStatus.PENDING
     created_at: datetime = Field(default_factory=datetime.now)

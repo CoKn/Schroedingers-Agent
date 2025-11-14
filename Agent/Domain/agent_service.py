@@ -273,6 +273,7 @@ class AgentService:
 
         version = getattr(session, "prompt_profile", {}).get("step_summary", "v2")
         spec = REGISTRY.get("step_summary", version=version)
+        
         summary_prompt = spec.render(
             user_prompt=session.user_prompt,
             current_goal=session.active_goal.value if session.active_goal else "",
@@ -281,7 +282,7 @@ class AgentService:
             tool=tool,
             args=json.dumps(args, ensure_ascii=False),
             last_observation=session.last_observation or "",
-            plan=session.executable_plan
+            plan=[ n.to_dict(include_children=False) for n in (session.executable_plan or [])]
         )
 
         # TODO: tun here json mode on so that I can ckeck if all preconditions are met. Initiate replanning if precondition are not met
@@ -296,7 +297,6 @@ class AgentService:
         """Generate a summary of the hierarchical plan for API response."""
         if not session.plan or session.planning_mode != PlanningMode.HIERARCHICAL:
             return None
-        
         
         return {
             "planning_mode": session.planning_mode.name,
