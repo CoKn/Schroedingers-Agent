@@ -40,24 +40,8 @@ class AgentService:
         self.llm = llm
         self.mcp = mcp
         self.planner = LLMPlanner(llm=self.llm, get_tool_docs=self._get_tool_docs)
-        # Maintain optional references to the active session to support helper methods
         self.session: AgentSession | None = None
         self._current_session: AgentSession | None = None
-
-    # TODO: Move this function to the plan file into the Node class
-    def _node_to_dict(self, node: Node) -> dict:
-        return {
-            "value": node.value,
-            "abstraction_score": node.abstraction_score,
-            "status": node.status.name if node.status else None,
-            "mcp_tool": node.mcp_tool,
-            "tool_args": node.tool_args,
-            "assumed_preconditions": node.assumed_preconditions,
-            "assumed_effects": node.assumed_effects,
-            "is_leaf": node.is_leaf(),
-            "is_executable": node.is_executable(),
-            "children": [self._node_to_dict(child) for child in (node.children or [])]
-        }
 
     def _record_plan_event(self, session: AgentSession, event_type: str, payload: dict):
         """Append a plan-related event to the session trace and plan history."""
@@ -165,7 +149,7 @@ class AgentService:
             plan_payload = {
                 "kind": "hierarchical",
                 "initial": bool(initial),
-                "tree": self._node_to_dict(session.plan.root) if session.plan and session.plan.root else None,
+                "tree": session.plan.root.to_dict() if session.plan and session.plan.root else None,
                 "leaf_count": len(session.executable_plan or []),
             }
             self._record_plan_event(session, "plan_generated", plan_payload)
@@ -313,12 +297,10 @@ class AgentService:
         if not session.plan or session.planning_mode != PlanningMode.HIERARCHICAL:
             return None
         
-        def node_to_dict(node: Node) -> dict:
-            return self._node_to_dict(node)
         
         return {
             "planning_mode": session.planning_mode.name,
-            "tree_structure": node_to_dict(session.plan.root) if session.plan.root else None,
+            "tree_structure": session.plan.root.to_dict() if session.plan.root else None,
             "total_goals": len(session.plan.get_leaves()) if session.plan else 0,
             "completed_goals": session.step_index,
             "remaining_goals": len(session.executable_plan or []),

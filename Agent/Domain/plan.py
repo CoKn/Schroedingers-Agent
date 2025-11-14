@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 
 from Agent.Domain.goal_state_enum import GoalStatus
 
@@ -22,6 +22,28 @@ class Node(BaseModel):
 
     assumed_preconditions: Optional[List[str]] = Field(default_factory=list)
     assumed_effects: Optional[List[str]] = Field(default_factory=list)
+
+
+    @computed_field
+    @property
+    def is_leaf(self) -> bool:
+        return not self.children
+
+    @computed_field
+    @property
+    def is_executable(self) -> bool:
+        return (
+            self.mcp_tool is not None or
+            (self.abstraction_score is not None and self.abstraction_score < 0.3)
+        )
+    
+    def to_dict(self, include_children: bool = True) -> dict:
+        data = self.model_dump(
+            exclude={'parent'}  # avoid upward recursion
+        )
+        if include_children:
+            data['children'] = [c.to_dict(include_children=True) for c in self.children]
+        return data
 
     def model_post_init(self, __context) -> None:
         """Validate abstraction score is within valid range."""
