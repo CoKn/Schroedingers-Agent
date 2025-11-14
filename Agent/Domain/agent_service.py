@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Callable
 
-from Agent.Domain.planning.llm_planner import LLMPlanner
+from Agent.Domain.llm_planner import LLMPlanner
 from Agent.Domain.prompts.loader import load_all_prompts
 
 load_all_prompts()

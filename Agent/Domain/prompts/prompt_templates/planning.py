@@ -13,6 +13,7 @@ def planning_template(vars: Mapping[str, Any]) -> str:
     - max_steps: int
     - preconditions: list[str]
     - effects: list[str]
+    - facts 
 
     The function deliberately keeps sections short and omits empty blocks to
     avoid unbounded prompt growth.
@@ -37,11 +38,19 @@ def planning_template(vars: Mapping[str, Any]) -> str:
         parts.append("Desired effects/outcomes:")
         parts.extend(("- " + e) for e in effects)
 
+    parts.append("Decide if further action is required.")
     parts.append(
-        "Generate the appropriate parameters for the tool to achieve the goal."
+        "Return EXACTLY ONE JSON object using one of these formats:"
     )
     parts.append(
-        "Return a JSON object with the keys 'call_function' and 'arguments'."
+        "1) If the goal is already achieved: {\"goal_reached\": true}"
     )
+    parts.append(
+        "2) If it's impossible/inappropriate to proceed (e.g., unmet preconditions or missing input): {\"terminate\": true, \"reason\": \"<brief>\"}"
+    )
+    parts.append(
+        "3) Otherwise, generate the tool call parameters: {\"call_function\": \"<tool_name>\", \"arguments\": {\"param\": \"value\"}}"
+    )
+    parts.append("Respond with valid JSON only — no extra text.")
 
     return "\n".join(parts)

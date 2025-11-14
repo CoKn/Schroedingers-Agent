@@ -16,9 +16,8 @@ Observation History:
 {observation_history}
 """
 
-# just for testing
 TEMPLATE_V2 = """
-Goal: ({user_prompt}) previous step ({step_index}): tool={prev_tool} produced: {last_observation}
+Goal: ({user_prompt}) previous step ({step_index}): tool={prev_tool} produced: {last_observation} facts generated: {facts}
 Choose the NEXT best tool toward the user's goal. Avoid repeating the same tool consecutively unless needed.
 Before selecting a tool, evaluate if the goal is already achieved or blocked by missing user input or external constraints.
 - If blocked, do NOT proceed with operational actions that depend on that input.
@@ -34,5 +33,5 @@ Observation History:
 
 PROMPTS = [
     register_prompt("context", kind="system", required_vars={"user_prompt","step_index", "prev_tool", "last_observation", "observation_history"}, version="v1", json_mode=True)(TEMPLATE_V1),
-    register_prompt("context", kind="system", required_vars={"user_prompt","step_index", "prev_tool", "last_observation", "observation_history"}, version="v2", json_mode=True)(TEMPLATE_V2)
+    register_prompt("context", kind="system", required_vars={"user_prompt","step_index", "prev_tool", "last_observation", "observation_history", "facts"}, version="v2", json_mode=True)(TEMPLATE_V2)
 ]

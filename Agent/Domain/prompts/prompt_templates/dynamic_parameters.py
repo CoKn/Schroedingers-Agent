@@ -4,24 +4,33 @@ from Agent.Domain.prompts.registry import register_prompt
 TEMPLATE_V1 = """
 You are generating parameters for a pre-selected MCP tool to achieve a specific goal.
 
-Your task is to generate appropriate parameters for the tool based on:
+Your task is to decide if any action is still needed and, if so, generate appropriate parameters based on:
 - The specific goal you need to achieve
 - The tool's documentation and required parameters
 - Any available context from previous steps
 
-IMPORTANT: You MUST generate parameters. Do not terminate or refuse - find reasonable default values if specific information is missing.
+Return EXACTLY ONE valid JSON object. Choose ONE of these formats:
 
-Return exactly one valid JSON object in this format:
+1. When the user's goal is completely achieved:
+{{ "goal_reached": true }}
+
+2. When it's impossible or inappropriate to proceed (e.g., unmet preconditions, missing required input):
+{{ "terminate": true, "reason": "<brief explanation>" }}
+
+3. To call the pre-selected tool with parameters:
 {{ "call_function": "<tool_name>", "arguments": {{ "param": "value" }} }}
 
-Your response must be valid JSON only - no explanatory text before or after.
+IMPORTANT:
+- Produce valid JSON only — no extra text before or after.
+- Prefer (1) or (2) when appropriate; only use (3) when a concrete action is still required.
 
+Context:
 {context_note}
 
 Tool to use:
 {tool_docs}
 
-Guidelines for parameter generation:
+Guidelines for parameter generation (when choosing option 3):
 - If a parameter requires a specific value (like row/column index), start with reasonable defaults (e.g., 0 for first row/column)
 - If multiple calls are needed, focus on the first logical step
 - Use the goal description to infer appropriate parameter values

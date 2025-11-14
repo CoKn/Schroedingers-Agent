@@ -18,6 +18,9 @@ class LLMPlanner:
 
     def _observation_history(self, session: AgentSession, N: int = 4) -> list[str]:
         return [t.get("observation") for t in (session.trace or []) if "observation" in t][-N:]
+    
+    def _facts(self, session: AgentSession) -> list[str]:
+        return [f.get("facts") for f in (session.trace or []) if "facts" in f]
 
     def format_context_note(self, session: AgentSession) -> str:
         """
@@ -27,7 +30,7 @@ class LLMPlanner:
         base = ""
         if session.step_index > 0 and session.last_observation is not None:
             prev_tool = session.last_decision.get("call_function") if session.last_decision else ""
-            version = getattr(session, "prompt_profile", {}).get("context", "v1")
+            version = getattr(session, "prompt_profile", {}).get("context", "v2")
             spec = REGISTRY.get("context", version=version) 
             base = spec.render(
                 user_prompt=session.active_goal.value if session.active_goal else "",
@@ -35,6 +38,7 @@ class LLMPlanner:
                 prev_tool=prev_tool or "",
                 last_observation=session.last_observation or "",
                 observation_history=self._observation_history(session),
+                facts=self._facts(session=session)
             )
 
         preconds = getattr(session.active_goal, "assumed_preconditions", []) or []

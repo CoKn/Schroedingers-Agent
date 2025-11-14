@@ -24,7 +24,7 @@ class OpenAIAdapter(LLM, BaseModel):
         prompt: str,
         system_prompt: str,
         json_mode: bool = False,
-        max_tokens: int = 20000,
+        max_tokens: int = 16384,
         temperature: float = 0,
         top_p: float = 1
     ) -> str:
@@ -54,7 +54,7 @@ class OpenAIAdapter(LLM, BaseModel):
         prompt: str,
         system_prompt: str,
         json_mode: bool = False,
-        max_tokens: int = 20000,
+        max_tokens: int = 16384,
         temperature: float = 0,
         top_p: float = 1
     ):

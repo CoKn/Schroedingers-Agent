@@ -23,7 +23,6 @@ class Node(BaseModel):
     assumed_preconditions: Optional[List[str]] = Field(default_factory=list)
     assumed_effects: Optional[List[str]] = Field(default_factory=list)
 
-
     @computed_field
     @property
     def is_leaf(self) -> bool:
