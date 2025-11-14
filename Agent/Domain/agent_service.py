@@ -11,7 +11,7 @@ from Agent.Domain.prompts.loader import load_all_prompts
 load_all_prompts()
 
 from Agent.Domain.prompts.registry import REGISTRY
-from Agent.Domain.utils.json_markdown import json_to_markdown
+from Agent.Domain.utils.json_markdown import json_to_markdown, format_tool_output_for_llm
 from Agent.Domain.plan import Tree, Node
 from Agent.Domain.agent_state_enum import AgentState
 from Agent.Domain.planning_mode_enum import PlanningMode
@@ -205,6 +205,7 @@ class AgentService:
             # If still no steps (or skipping due to throttle), fall back to reactive planning (Mode 3)
             if not session.executable_plan or len(session.executable_plan) == 0:
                 logger.debug("No steps available; falling back to reactive planning (tool + args)")
+                
                 context_note_formatted = self.planner.format_context_note(session)
                 decision = await self.planner.generate_full_plan(session, context_note_formatted)
                 # Record reactive plan generation
@@ -271,9 +272,15 @@ class AgentService:
         preconds = getattr(session.active_goal, "assumed_preconditions", []) if session.active_goal else []
         effects = getattr(session.active_goal, "assumed_effects", []) if session.active_goal else []
 
-        version = getattr(session, "prompt_profile", {}).get("step_summary", "v2")
+        version = getattr(session, "prompt_profile", {}).get("step_summary", "v3")
         spec = REGISTRY.get("step_summary", version=version)
         
+        raw_obs = session.last_observation or ""
+        formatted_obs = format_tool_output_for_llm(raw_obs)
+
+        # logger.info(formatted_obs)
+
+
         summary_prompt = spec.render(
             user_prompt=session.user_prompt,
             current_goal=session.active_goal.value if session.active_goal else "",
@@ -281,7 +288,7 @@ class AgentService:
             effects_block=effects,
             tool=tool,
             args=json.dumps(args, ensure_ascii=False),
-            last_observation=session.last_observation or "",
+            last_observation=formatted_obs,
             plan=[ n.to_dict(include_children=False) for n in (session.executable_plan or [])]
         )
 
@@ -359,7 +366,7 @@ class AgentService:
                 if progress:
                     progress(f"Executing {decision['call_function']}...")
                 observation = await self._act(decision)
-                on_executed(session, str(observation))
+                on_executed(session, observation)
 
                 if progress:
                     progress("Summarising response...")
@@ -383,7 +390,7 @@ class AgentService:
                     "assumed_preconditions": getattr(session.active_goal, "assumed_preconditions", None),
                     "assumed_effects": getattr(session.active_goal, "assumed_effects", None),
                     "plan": decision,
-                    "act": observation,
+                    "act": format_tool_output_for_llm(observation),
                     "observation": summary_json,
                     "remaining_goals": len(session.executable_plan or [])
                 })

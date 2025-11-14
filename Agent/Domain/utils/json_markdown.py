@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Iterable
 import json
+from json import JSONDecodeError
 
 Primitive = (str, int, float, bool, type(None))
 
@@ -200,3 +201,52 @@ def json_to_markdown(
 
     render(data, heading_level + (1 if title else 0))
     return "\n".join(lines) + "\n"
+
+
+def format_tool_output_for_llm(raw: str) -> str:
+    """Turn raw tool output into markdown that is easier for the LLM to read.
+
+    Generic behaviour:
+    - If it's parseable JSON (dict/list/etc.), render the full structure as markdown.
+    - If it has nested JSON-like strings in common fields (e.g. 'body', 'data', 'text'),
+      try to parse those as JSON too.
+    - If it's not JSON, return it as-is (plain text / markup).
+    """
+    if not raw:
+        return ""
+
+    # Try to parse top-level JSON
+    try:
+        data = json.loads(raw)
+    except JSONDecodeError:
+        # Raw string (already plain text or markup)
+        return raw
+
+    # If it's a dict, try to parse nested JSON in a few generic fields
+    if isinstance(data, dict):
+        for key in ("body", "data", "text", "details"):
+            value = data.get(key)
+            if isinstance(value, str):
+                s = value.strip()
+                if s.startswith("{") or s.startswith("["):
+                    try:
+                        data[key] = json.loads(s)
+                    except JSONDecodeError:
+                        # leave as-is if it isn't valid JSON
+                        pass
+
+        # Let json_to_markdown handle the full dict
+        return json_to_markdown(
+            data,
+            title="Tool output",
+            heading_level=3,
+            max_string_inline=200,  # long strings become code blocks
+        )
+
+    # For lists / other JSON types, just render directly
+    return json_to_markdown(
+        data,
+        title="Tool output",
+        heading_level=3,
+        max_string_inline=200,
+    )
