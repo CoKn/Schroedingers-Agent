@@ -8,6 +8,9 @@ from typing import Optional, List
 class AgentSession(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
+    plan: Tree | None = None
+    plan_revisions: list[Tree] = []
+    
     user_prompt: str
     state: AgentState = AgentState.PLANNING
     max_steps: int = 3

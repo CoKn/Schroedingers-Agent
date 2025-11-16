@@ -175,6 +175,27 @@ Responses from `/agent` include:
 - `trace`: per-step trace of plan, act, observe
 - `plan`: hierarchical plan summary of the current run (when available)
 
+## Event Bus (Observer Pattern)
+
+You can observe agent lifecycle events (e.g., plan generation) via a lightweight async-aware event bus:
+
+```python
+from Agent.Domain.events import EventBus, AgentEventType
+from Agent.Domain.agent_service import AgentService
+
+events = EventBus()
+
+def on_plan(evt):
+  print("Plan generated with", evt.data.get("leaf_count"), "executable steps")
+
+events.subscribe(AgentEventType.PLAN_GENERATED, on_plan)
+
+service = AgentService(llm=llm_client, mcp=mcp_client, events=events)
+# await service.generate_plan(session)  # emits PLANNING_STARTED and PLAN_GENERATED
+```
+
+Subscribers can be sync or async functions. Errors in subscribers are logged but don’t interrupt the agent run.
+
 ## MCP Tools
 
 This repo ships a minimal MCP server for local testing:

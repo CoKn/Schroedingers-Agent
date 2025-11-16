@@ -1,0 +1,11 @@
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class AgentPrompts:
+    goal_decomposition: tuple[str, str] = ("goal_decomposition", "v1")
+    step_summary: tuple[str, str] = ("step_summary", "v3")
+    planning: tuple[str, str] = ("planning", "v1")
+    dynamic_parameters: tuple[str, str] = ("dynamic_parameters", "v1")
+    context: tuple[str, str] = ("context", "v2")
+    system: tuple[str, str] = ("system", "v1")
