@@ -3,6 +3,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, computed_field
 from uuid import uuid4
 
+from deprecated import deprecated
+
 from Agent.Domain.goal_state_enum import GoalStatus
 
 
@@ -58,13 +60,33 @@ class Node(BaseModel):
             (self.abstraction_score is not None and self.abstraction_score < 0.3)
         )
     
-    def to_dict(self, include_children: bool = True) -> dict:
+    @deprecated
+    def _to_dict(self, include_children: bool = True) -> dict:
         data = self.model_dump(
             exclude={'parent'}  # avoid upward recursion
         )
         if include_children:
             data['children'] = [c.to_dict(include_children=True) for c in self.children]
         return data
+    
+    def to_dict(self, include_children: bool = True) -> dict:
+        """
+        JSON-safe representation of this node.
+
+        - Enums become their `.value`
+        - datetimes become ISO strings
+        - parent is excluded to avoid cycles
+        """
+        data = self.model_dump(
+            mode="json",          # <<< this is the critical change
+            exclude={"parent"},   # avoid upward recursion
+        )
+        if include_children:
+            data["children"] = [
+                c.to_dict(include_children=True) for c in self.children
+            ]
+        return data
+
 
     def model_post_init(self, __context) -> None:
         """Validate abstraction score is within valid range."""

@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+from typing import Any, Awaitable, Callable, Dict, List, AsyncIterator, Optional, Union
 
 
 class AgentEventType(str, Enum):
@@ -48,35 +48,71 @@ class AgentEvent:
 Callback = Callable[[AgentEvent], Union[None, Awaitable[None]]]
 
 
+@dataclass
+class AgentEvent:
+    type: AgentEventType
+    data: Dict[str, Any]
+
+
 class EventBus:
-    """Simple async-aware event bus for the agent lifecycle.
-
-    - Subscribers can be sync or async callables.
-    - `publish` awaits async subscribers; sync ones run inline.
-    - `subscribe` returns an `unsubscribe` function.
-    """
-
     def __init__(self) -> None:
-        self._subs: Dict[AgentEventType, List[Callback]] = defaultdict(list)
-        self._logger = logging.getLogger(__name__)
+        # per-event-type subscriber lists; None = wildcard subscribers
+        self._subscribers: Dict[Optional[AgentEventType], List[Callable[[AgentEvent], Awaitable[None]]]] = {}
+        self._lock = asyncio.Lock()
 
-    def subscribe(self, event_type: AgentEventType, callback: Callback) -> Callable[[], None]:
-        self._subs[event_type].append(callback)
-
-        def _unsubscribe() -> None:
-            try:
-                self._subs[event_type].remove(callback)
-            except ValueError:
-                pass
-
-        return _unsubscribe
+    def subscribe(
+        self,
+        event_type: AgentEventType | None,
+        callback: Callable[[AgentEvent], Awaitable[None]],
+    ) -> None:
+        """
+        Register a callback for a given event_type.
+        If event_type is None, the callback receives *all* events.
+        """
+        self._subscribers.setdefault(event_type, []).append(callback)
 
     async def publish(self, event: AgentEvent) -> None:
-        callbacks = list(self._subs.get(event.type, []))
+        """
+        Publish an event to all subscribers for that type + wildcard subscribers.
+        """
+        async with self._lock:
+            callbacks = list(self._subscribers.get(event.type, []))
+            callbacks += self._subscribers.get(None, [])
+
         for cb in callbacks:
-            try:
-                result = cb(event)
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception:
-                self._logger.exception("Event subscriber failed for %s", event.type)
+            # assume async callbacks; if you support sync too, check and wrap
+            await cb(event)
+
+    async def stream(
+        self,
+        *event_types: AgentEventType,
+    ) -> AsyncIterator[AgentEvent]:
+        """
+        Async iterator that yields events from this EventBus.
+
+        Usage:
+            async for event in bus.stream():
+                ...
+
+        If event_types is empty: subscribe to ALL events.
+        If event_types given: subscribe only to those.
+        """
+        queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
+
+        async def _enqueue(event: AgentEvent) -> None:
+            await queue.put(event)
+
+        # subscribe our internal callback
+        if event_types:
+            for et in event_types:
+                self.subscribe(et, _enqueue)
+        else:
+            # wildcard subscriber
+            self.subscribe(None, _enqueue)
+
+        try:
+            while True:
+                ev = await queue.get()
+                yield ev
+        finally:
+            ...

@@ -171,7 +171,8 @@ async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
             Forward AgentEvents from the EventBus to the WebSocket.
             """
             try:
-                async for event in events.subscribe():
+                # Listen to ALL events from this bus
+                async for event in events.stream():
                     await websocket.send_json(
                         {
                             "event": event.type.value,
@@ -179,7 +180,6 @@ async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
                         }
                     )
             except WebSocketDisconnect:
-                # Client went away; just stop consuming events
                 logger.info("WebSocket disconnected while streaming events")
             except Exception:
                 logger.exception("Error while streaming events to WebSocket")
@@ -230,6 +230,7 @@ async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
             await websocket.send_json({"event": "error", "error": str(e)})
         with contextlib.suppress(Exception):
             await websocket.close()
+
     
 
 @app.websocket("/ws/call_mcp")
