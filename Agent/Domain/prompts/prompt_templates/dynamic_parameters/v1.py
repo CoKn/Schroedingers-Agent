@@ -1,7 +1,4 @@
-from Agent.Domain.prompts.registry import register_prompt
-
-
-TEMPLATE_V1 = """
+"""
 You are generating parameters for a pre-selected MCP tool to achieve a specific goal.
 
 Your task is to decide if any action is still needed and, if so, generate appropriate parameters based on:
@@ -36,8 +33,3 @@ Guidelines for parameter generation (when choosing option 3):
 - Use the goal description to infer appropriate parameter values
 - When in doubt, choose values that allow exploration or investigation of the problem space
 """
-
-
-PROMPTS = [
-    register_prompt("dynamic_parameters", kind="system", required_vars={"context_note","tool_docs"}, version="v1", json_mode=True)(TEMPLATE_V1),
-]

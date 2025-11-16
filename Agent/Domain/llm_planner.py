@@ -30,8 +30,7 @@ class LLMPlanner:
         base = ""
         if session.step_index > 0 and session.last_observation is not None:
             prev_tool = session.last_decision.get("call_function") if session.last_decision else ""
-            version = getattr(session, "prompt_profile", {}).get("context", "v2")
-            spec = REGISTRY.get("context", version=version) 
+            spec = REGISTRY.get("context", version="v2") 
             base = spec.render(
                 user_prompt=session.active_goal.value if session.active_goal else "",
                 step_index=session.step_index,
@@ -66,9 +65,10 @@ class LLMPlanner:
             max_steps=session.max_steps,
             preconditions=pre,
             effects=eff,
+            enforce_required_vars=False
         )
 
-        dyn_spec = REGISTRY.get("dynamic_parameters")
+        dyn_spec = REGISTRY.get("dynamic_parameters", version="v1")
         sys_prompt = dyn_spec.render(context_note=context_note, tool_docs=tool_docs)
 
         resp = await asyncio.to_thread(
@@ -96,9 +96,10 @@ class LLMPlanner:
             max_steps=session.max_steps,
             preconditions=pre,
             effects=eff,
+            enforce_required_vars=False
         )
 
-        plan_spec = REGISTRY.get("system")
+        plan_spec = REGISTRY.get("system", version="v1")
         sys_prompt = plan_spec.render(context_note=context_note, tool_docs=tool_docs)
 
         resp = await asyncio.to_thread(

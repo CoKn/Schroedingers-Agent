@@ -1,9 +1,25 @@
 # Agent/Domain/prompts/registry.py
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Any, Literal, Optional
+from typing import Any, Callable, Literal, Mapping
 
 PromptKind = Literal["system", "user", "tool"]
+
+
+class _NullDefaultMapping(dict):
+    """
+    Mapping for str.format_map that returns the string 'null' for any
+    missing key.
+
+    This lets templates safely reference {placeholder} without requiring
+    every key to be passed to render(...). Anything not in kwargs will
+    be rendered as the literal string 'null'.
+    """
+
+    def __missing__(self, key: str) -> str:
+        return "null"
+
 
 @dataclass(frozen=True)
 class PromptSpec:
@@ -12,19 +28,37 @@ class PromptSpec:
     template: str | Callable[[Mapping[str, Any]], str] = ""
     required_vars: set[str] = field(default_factory=set)
     version: str = "v1"
-    json_mode: bool = False
+    json_mode: bool = True
 
-    def render(self, **kwargs) -> str:
-        # minimal var checking to catch formatting bugs early
-        missing = self.required_vars - set(kwargs)
-        if missing:
-            raise KeyError(f"Missing vars for prompt '{self.id}': {sorted(missing)}")
-        if callable(self.template):
-            return self.template(kwargs)
-        return self.template.format(**kwargs)
+    def render(self, enforce_required_vars=True, **kwargs: Any) -> str:
+        """
+        Render the prompt.
+
+        - For callable templates (legacy/function-style), we still enforce
+          required_vars strictly and pass the full mapping to the function.
+
+        - For string templates, any placeholder that is not provided in
+          kwargs is replaced with the literal string "null" via
+          _NullDefaultMapping + str.format_map.
+
+        If required_vars is non-empty, we still enforce that those keys
+        are present in kwargs to catch obvious bugs early.
+        """
+        # String templates: enforce required_vars if given
+        if self.required_vars and enforce_required_vars:
+            missing = self.required_vars - set(kwargs)
+            if missing:
+                raise KeyError(
+                    f"Missing vars for prompt '{self.id}': {sorted(missing)}"
+                )
+
+        mapping: Mapping[str, Any] = _NullDefaultMapping(kwargs)
+        # format_map triggers __missing__ for any absent keys
+        return self.template.format_map(mapping)
+
 
 class PromptRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self._by_key: dict[tuple[str, str], PromptSpec] = {}
 
     def register(self, spec: PromptSpec) -> PromptSpec:
@@ -33,28 +67,20 @@ class PromptRegistry:
             raise KeyError(f"Duplicate prompt: {key}")
         self._by_key[key] = spec
         return spec
-    
+
     def get(self, id: str, version: str = "v1") -> PromptSpec:
-        return self._by_key[(id, version)]
+        key = (id, version)
+        if key not in self._by_key:
+            # Lazy-load
+            from Agent.Domain.prompts.loader import load_all_prompts
+            load_all_prompts()
+        try:
+            return self._by_key[key]
+        except KeyError as e:
+            raise KeyError(f"Unknown prompt id/version: ({id!r}, {version!r}), Registered prompts: are {self.debug_keys}") from e
 
+
+    def debug_keys(self) -> list[tuple[str, str]]:
+        return sorted(self._by_key.keys())
+    
 REGISTRY = PromptRegistry()
-
-def register_prompt(
-    id: str,
-    *,
-    kind: PromptKind = "system",
-    required_vars: set[str] | None = None,
-    version: str = "v1",
-    json_mode: bool = False,
-):
-    def decorator(template_or_func: str | Callable[[Mapping[str, Any]], str]):
-        spec = PromptSpec(
-            id=id,
-            kind=kind,
-            template=template_or_func,
-            required_vars=required_vars or set(),
-            version=version,
-            json_mode=json_mode,
-        )
-        return REGISTRY.register(spec)
-    return decorator

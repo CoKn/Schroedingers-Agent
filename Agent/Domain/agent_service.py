@@ -7,10 +7,12 @@ from typing import Callable
 
 from Agent.Domain.llm_planner import LLMPlanner
 from Agent.Domain.prompts.loader import load_all_prompts
+from Agent.Domain.prompts.registry import REGISTRY
 
 load_all_prompts()
 
-from Agent.Domain.prompts.registry import REGISTRY
+print("Registered prompts:", REGISTRY.debug_keys())
+
 from Agent.Domain.utils.json_markdown import json_to_markdown, format_tool_output_for_llm
 from Agent.Domain.plan import Tree, Node
 from Agent.Domain.agent_state_enum import AgentState
@@ -100,8 +102,7 @@ class AgentService:
             session.tools_meta = self.mcp.get_tools_json()
             
         # 1. initial prompt is set as root of tree
-        version = getattr(session, "prompt_profile", {}).get("goal_decomposition", "v1")
-        spec = REGISTRY.get("goal_decomposition", version=version)
+        spec = REGISTRY.get("goal_decomposition", version="v1")
         # Pass session explicitly to avoid relying on instance state before it's set
         system_prompt = spec.render(tool_docs=self._get_tool_docs(session=session))
         
@@ -248,6 +249,9 @@ class AgentService:
             logger.debug("Mode 3: No pre-planning, generating tool selection and parameters")
             return await self.planner.generate_full_plan(session, context_note_formatted)
 
+    async def _continue_acting(self, session: AgentSession) -> bool:
+        return self.session.trace[-1].get("ready_to_proceed", True)
+
     async def _act(self, decision: dict) -> str:
         fn_name = decision["call_function"]
         fn_args = decision.get("arguments", {})
@@ -272,8 +276,7 @@ class AgentService:
         preconds = getattr(session.active_goal, "assumed_preconditions", []) if session.active_goal else []
         effects = getattr(session.active_goal, "assumed_effects", []) if session.active_goal else []
 
-        version = getattr(session, "prompt_profile", {}).get("step_summary", "v3")
-        spec = REGISTRY.get("step_summary", version=version)
+        spec = REGISTRY.get("step_summary", version="v3")
         
         raw_obs = session.last_observation or ""
         formatted_obs = format_tool_output_for_llm(raw_obs)

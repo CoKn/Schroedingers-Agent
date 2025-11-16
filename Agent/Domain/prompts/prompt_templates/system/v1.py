@@ -1,6 +1,4 @@
-from Agent.Domain.prompts.registry import register_prompt
-
-TEMPLATE_V1 = """
+"""
 You orchestrate MCP tools step-by-step.
 
 Return exactly one valid JSON object. Choose one of these three formats:
@@ -21,8 +19,3 @@ IMPORTANT: Your response must be valid JSON only - no explanatory text before or
 Available tools:
 {tool_docs}
 """
-
-
-PROMPTS = [
-    register_prompt("system", kind="system", required_vars={"context_note","tool_docs"}, version="v1", json_mode=True)(TEMPLATE_V1),
-]
