@@ -5,6 +5,7 @@ import json
 from typing import Callable
 from Agent.Domain.prompts.registry import REGISTRY
 from Agent.Domain.agent_lifecycle import AgentSession
+from Agent.Domain.agent_prompt_config import AgentPrompts
 
 ProgressCb = Callable[[str], None]
 
@@ -18,6 +19,9 @@ class LLMPlanner:
 
     def _observation_history(self, session: AgentSession, N: int = 4) -> list[str]:
         return [t.get("observation") for t in (session.trace or []) if "observation" in t][-N:]
+    
+    def _facts(self, session: AgentSession) -> list[str]:
+        return [f.get("facts") for f in (session.trace or []) if "facts" in f]
 
     def format_context_note(self, session: AgentSession) -> str:
         """
@@ -27,14 +31,15 @@ class LLMPlanner:
         base = ""
         if session.step_index > 0 and session.last_observation is not None:
             prev_tool = session.last_decision.get("call_function") if session.last_decision else ""
-            version = getattr(session, "prompt_profile", {}).get("context", "v1")
-            spec = REGISTRY.get("context", version=version) 
+
+            spec = REGISTRY.get(*AgentPrompts.context)
             base = spec.render(
                 user_prompt=session.active_goal.value if session.active_goal else "",
                 step_index=session.step_index,
                 prev_tool=prev_tool or "",
                 last_observation=session.last_observation or "",
                 observation_history=self._observation_history(session),
+                facts=self._facts(session=session)
             )
 
         preconds = getattr(session.active_goal, "assumed_preconditions", []) or []
@@ -53,25 +58,26 @@ class LLMPlanner:
         tool_docs = self._get_tool_docs(session.active_goal.mcp_tool)
         pre = getattr(session.active_goal, "assumed_preconditions", []) or []
         eff = getattr(session.active_goal, "assumed_effects", []) or []
-
-        planning_prompt = (
-            f"User goal: {session.active_goal.value}\n"
-            f"Tool to use: {session.active_goal.mcp_tool}\n"
-            f"Step index: {session.step_index} of {session.max_steps}.\n"
-            + (f"Assumed preconditions:\n- " + "\n- ".join(pre) + "\n" if pre else "")
-            + (f"Desired effects/outcomes:\n- " + "\n- ".join(eff) + "\n" if eff else "")
-            + "Generate the appropriate parameters for this tool to achieve the goal, "
-              "taking the preconditions and desired effects into account."
+        
+        planning_spec = REGISTRY.get(*AgentPrompts.planning)
+        planning_prompt = planning_spec.render(
+            user_goal=session.active_goal.value if session.active_goal else "",
+            tool_name=session.active_goal.mcp_tool if session.active_goal else None,
+            step_index=session.step_index,
+            max_steps=session.max_steps,
+            preconditions=pre,
+            effects=eff,
+            enforce_required_vars=False
         )
 
-        dyn_spec = REGISTRY.get("dynamic_parameters")  # id from your self-registered prompt
+        dyn_spec = REGISTRY.get(*AgentPrompts.dynamic_parameters)
         sys_prompt = dyn_spec.render(context_note=context_note, tool_docs=tool_docs)
 
         resp = await asyncio.to_thread(
             self.llm.call,
             prompt=planning_prompt,
             system_prompt=sys_prompt,
-            json_mode=dyn_spec.json_mode,
+            json_mode=True,
         )
         parsed = json.loads(resp)
         if "call_function" in parsed:
@@ -84,22 +90,24 @@ class LLMPlanner:
         pre = getattr(session.active_goal, "assumed_preconditions", []) or []
         eff = getattr(session.active_goal, "assumed_effects", []) or []
 
-        planning_prompt = (
-            f"User goal: {session.active_goal.value}\n"
-            f"Step index: {session.step_index} of {session.max_steps}.\n"
-            + (f"Assumed preconditions:\n- " + "\n- ".join(pre) + "\n" if pre else "")
-            + (f"Desired effects/outcomes:\n- " + "\n- ".join(eff) + "\n" if eff else "")
-            + "Select the most appropriate tool and parameters considering the preconditions "
-              "and targeting the desired effects."
+        planning_spec = REGISTRY.get(*AgentPrompts.planning)
+        planning_prompt = planning_spec.render(
+            user_goal=session.active_goal.value if session.active_goal else "",
+            tool_name=None,
+            step_index=session.step_index,
+            max_steps=session.max_steps,
+            preconditions=pre,
+            effects=eff,
+            enforce_required_vars=False
         )
 
-        plan_spec = REGISTRY.get("system")
-        sys_prompt = plan_spec.render(context_note=context_note, tool_docs=tool_docs)
+        system_spec = REGISTRY.get(*AgentPrompts.system)
+        sys_prompt = system_spec.render(context_note=context_note, tool_docs=tool_docs)
 
         resp = await asyncio.to_thread(
             self.llm.call,
             prompt=planning_prompt,
             system_prompt=sys_prompt,
-            json_mode=plan_spec.json_mode,
+            json_mode=True,
         )
         return json.loads(resp)

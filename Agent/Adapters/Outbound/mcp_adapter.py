@@ -8,6 +8,8 @@ from Agent.Adapters.Outbound.openai_adapter import OpenAIAdapter
 
 from Agent.Adapters.Outbound.mcp_http_adapter import MCPHttpClient
 from Agent.Adapters.Outbound.mcp_stdio_adapter import MCPStdioClient
+from Agent.Adapters.Outbound.mcp_http_auth import DotenvTokenStorage
+
 
 import json
 import logging
@@ -82,10 +84,15 @@ class MCPAdapter(BaseModel):
             try:
                 if server_type == "http":
                     client = MCPHttpClient()
-                    auth_conf = conf.get("auth")
+                    auth_conf = conf.get("auth") or {}
 
                     # For interactive OAuth flows, don't use a short timeout
                     if _is_oauth(auth_conf):
+                        storage_key = f"{server_name.upper()}_OAUTH_TOKEN"
+                        auth_conf = {
+                            **auth_conf,
+                            "storage": DotenvTokenStorage(path=".env_tokens", key=storage_key)
+                        }
                         await client.connect(conf["url"], auth_config=auth_conf)
                     else:
                         # Non-interactive (bearer/api-key/etc.) can use a short timeout

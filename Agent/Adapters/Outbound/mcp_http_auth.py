@@ -2,11 +2,101 @@ from urllib.parse import parse_qs, urlparse
 
 from mcp.client.auth import TokenStorage
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-import time
 import httpx
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any 
+from dotenv import dotenv_values
+from dotenv import dotenv_values, set_key
+import os, json, time
 
+
+config = dotenv_values(dotenv_path=".env_tokens")
+
+
+class DotenvTokenStorage(TokenStorage):
+    """
+    Persist OAuth tokens as a JSON string in a .env-style file.
+    Each server/user can use a distinct key to avoid collisions.
+    """
+
+    def __init__(self, path: str = ".env_tokens", key: str = "MCP_OAUTH_TOKEN"):
+        self.path = path
+        self.key = key
+        self._tokens: Optional[OAuthToken] = None
+        self._client_info: Optional[OAuthClientInformationFull] = None
+
+        # Ensure the file exists
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        open(self.path, "a").close()
+        try:
+            os.chmod(self.path, 0o600)  # restrict perms
+        except Exception:
+            pass
+
+    async def get_tokens(self) -> Optional[OAuthToken]:
+        if self._tokens:
+            return self._tokens
+
+        data = dotenv_values(dotenv_path=self.path)
+        raw = data.get(self.key)
+        if not raw:
+            return None
+
+        try:
+            payload = json.loads(raw)
+            token = OAuthToken(
+                access_token=payload.get("access_token"),
+                token_type=payload.get("token_type", "Bearer"),
+                refresh_token=payload.get("refresh_token"),
+                expires_in=payload.get("expires_in"),
+            )
+
+            # Populate optional fields many providers rely on
+            try:
+                token.fetched_at = payload.get("fetched_at")
+                token.expires_at = payload.get("expires_at")
+            except Exception:
+                pass
+
+            self._tokens = token
+            return token
+        except Exception:
+            return None
+
+    async def set_tokens(self, tokens: OAuthToken) -> None:
+        self._tokens = tokens
+
+        # Compute expires_at if not provided but expires_in is known
+        expires_at = getattr(tokens, "expires_at", None)
+        if not expires_at:
+            ei = getattr(tokens, "expires_in", None)
+            if ei:
+                try:
+                    expires_at = int(time.time()) + int(ei)
+                except Exception:
+                    expires_at = None
+
+        payload = {
+            "access_token": getattr(tokens, "access_token", None),
+            "refresh_token": getattr(tokens, "refresh_token", None),
+            "token_type": getattr(tokens, "token_type", "Bearer"),
+            "expires_in": getattr(tokens, "expires_in", None),
+            "fetched_at": getattr(tokens, "fetched_at", int(time.time())),
+            "expires_at": expires_at,
+        }
+
+        # Write JSON to the .env-style file under the configured key
+        set_key(self.path, self.key, json.dumps(payload))
+        try:
+            os.chmod(self.path, 0o600)
+        except Exception:
+            pass
+
+    async def get_client_info(self) -> Optional[OAuthClientInformationFull]:
+        return self._client_info
+
+    async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
+        self._client_info = client_info
 
 class InMemoryTokenStorage(TokenStorage):
     """Demo In-memory token storage implementation."""
