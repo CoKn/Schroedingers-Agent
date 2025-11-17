@@ -473,18 +473,12 @@ class AgentService:
                         # continue main loop with new executable_plan
                         continue
 
-                # keep a human-readable version of the last observation
-                facts_list = [
-                    cycle.get("summary", {}).get("facts_generated", None)
-                    if isinstance(cycle.get("summary", {}), dict)
-                    else None
-                    for cycle in session.trace
-                ]
-                final_summary = await asyncio.to_thread(
-                                    self.llm.call,
-                                    prompt= f"Facts: {facts_list}",
-                                    system_prompt="Answer the following question / summarise the agents observations",
-                                    json_mode=False,
+            # keep a human-readable version of the last observation
+            final_summary = await asyncio.to_thread(
+                                self.llm.call,
+                                prompt= f"Facts: {[cycle["summary"]["facts_generated"] for cycle in session.trace]}",
+                                system_prompt="Answer the following question / summarise the agents observations",
+                                json_mode=False,
                                 )
             return final_summary, session.trace
 
