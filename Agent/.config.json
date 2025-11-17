@@ -1,20 +1,32 @@
 [
   {
-    "Notion": {
+    "AlphaVantage": {
       "type": "http",
-      "url": "https://mcp.notion.com/mcp",
-      "auth": {
-        "type": "oauth",
-        "client_name": "Constantin's Agent",
-        "redirect_uri": "http://127.0.0.1:8080/mcp/oauth/callback",
-        "scope": "user"
-      }
+      "url": "http://localhost:8085/mcp/"
     }
   },
   {
-    "Websearch_Scraping": {
+    "FMP": {
       "type": "http",
-      "url":  "http://localhost:8082/mcp/"
+      "url": "http://localhost:8086/mcp/"
+    }
+  },
+  {
+    "OpenCorporates": {
+      "type": "http",
+      "url": "http://localhost:8087/mcp/"
+    }
+  },
+  {
+    "SEC_EDGAR": {
+      "type": "http",
+      "url": "http://localhost:8088/mcp/"
+    }
+  },
+  {
+    "MA_Analytics": {
+      "type": "http",
+      "url": "http://localhost:8089/mcp/"
     }
   }
 ]
