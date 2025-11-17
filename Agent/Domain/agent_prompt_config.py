@@ -9,3 +9,4 @@ class AgentPrompts:
     dynamic_parameters: tuple[str, str] = ("dynamic_parameters", "v1")
     context: tuple[str, str] = ("context", "v2")
     system: tuple[str, str] = ("system", "v1")
+    goal_decomposition_replanning: tuple[str, str] = ("goal_decomposition_replanning", "v2")

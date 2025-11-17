@@ -1,4 +1,4 @@
-# Agent/Domain/agent_service.py
+# 
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +8,7 @@ from typing import Callable
 
 from Agent.Ports.Outbound.llm_interface import LLM
 
+from Agent.Domain.goal_state_enum import GoalStatus
 from Agent.Domain.utils.json_markdown import json_to_markdown, format_tool_output_for_llm
 from Agent.Domain.utils.tool_docs import format_tool_docs, make_get_tool_docs
 from Agent.Domain.llm_planner import LLMPlanner
@@ -48,12 +49,7 @@ class AgentService:
                 data={"stage": "planning", "error": f"tools_meta: {e}"},
             ))
             raise
-        tool_docs = format_tool_docs(session.tools_meta)
-
-        # populate prompt
-        spec = REGISTRY.get(*AgentPrompts.goal_decomposition)
-        system_prompt = spec.render(tool_docs=tool_docs)
-
+            
         # publish: planning started
         start_payload = {
             "user_prompt": session.user_prompt,
@@ -71,11 +67,27 @@ class AgentService:
             )
         )
 
+        tool_docs = format_tool_docs(session.tools_meta)
+
         # formulate mode
-        if is_replan:
-            llm_prompt = f"Replan subtree for goal: {goal}"
-        else:
+        if stage == "planning":
+            spec = REGISTRY.get(*AgentPrompts.goal_decomposition)
+            system_prompt = spec.render(tool_docs=tool_docs)
             llm_prompt = f"Goal: {goal}"
+
+        elif stage == "replanning":
+            previous_subtree = replan_from_node.to_dict(include_children=True)
+            spec = REGISTRY.get(*AgentPrompts.goal_decomposition_replanning)
+            system_prompt = spec.render(tool_docs=tool_docs,
+                                        replan_goal=goal, 
+                                        facts=self.planner._facts(session=session),
+                                        latest_summary=session.last_observation,
+                                        previous_subtree=previous_subtree
+                                        )
+            llm_prompt = f"Global goal: {session.user_prompt}"
+
+        else:
+            raise ValueError(f"Invalid planning stage: {stage}. Expected 'planning' or 'replanning'.")
 
         # send llm request and generate json tree
         response = await asyncio.to_thread(
@@ -367,6 +379,10 @@ class AgentService:
             },
         ))
 
+        # set goal status to complete
+        if session.active_goal:
+            session.active_goal.status = GoalStatus.COMPLETED
+
         # attach summary to trace
         try:
             summary_json = json.loads(summary_raw)
@@ -393,6 +409,8 @@ class AgentService:
         session.goal_reached = getattr(session, "goal_reached", False)
         session.step_index = getattr(session, "step_index", 0)
         max_steps = getattr(session, "max_steps", 10)
+        replan_attempts = getattr(session, "replan_attempts", 0)
+        max_replans = getattr(session, "max_replans", 3)
 
         # publish session started
         await self.events.publish(AgentEvent(
@@ -406,8 +424,6 @@ class AgentService:
         # Generate initial plan if needed
         if not session.plan:
             await self.generate_plan(session=session, goal=session.user_prompt)
-
-        final_observation_markdown: str = ""
 
         try:
             while (
@@ -428,15 +444,49 @@ class AgentService:
                     # step summary can signal completion / termination
                     if summary_json.get("goal_reached"):
                         session.goal_reached = True
+
                     if summary_json.get("terminate"):
                         session.goal_reached = True
                         setattr(session, "terminate_reason", summary_json.get("reason"))
 
-                #TODO: create a final summary and answer of the quesiton
-                # keep a human-readable version of the last observation
-                final_observation_markdown = json_to_markdown(summary_raw)
+                    ready = summary_json.get("ready_to_proceed", True)
 
-            return final_observation_markdown, session.trace
+                    # replanning trigger
+                    if (
+                        not ready
+                        and not session.goal_reached
+                        and replan_attempts < max_replans
+                    ):
+                        # pick a node to replan from.
+                        # simple choice: replan the current goal's subtree.
+                        replan_node = session.active_goal or session.plan.root
+
+                        await self.generate_plan(
+                            session=session,
+                            goal=replan_node.value if replan_node else session.user_prompt,
+                            replan_from_node=replan_node,
+                        )
+
+                        replan_attempts += 1
+                        setattr(session, "replan_attempts", replan_attempts)
+
+                        # continue main loop with new executable_plan
+                        continue
+
+                # keep a human-readable version of the last observation
+                facts_list = [
+                    cycle.get("summary", {}).get("facts_generated", None)
+                    if isinstance(cycle.get("summary", {}), dict)
+                    else None
+                    for cycle in session.trace
+                ]
+                final_summary = await asyncio.to_thread(
+                                    self.llm.call,
+                                    prompt= f"Facts: {facts_list}",
+                                    system_prompt="Answer the following question / summarise the agents observations",
+                                    json_mode=False,
+                                )
+            return final_summary, session.trace
 
         except Exception as e:
             logger.exception("Error in loop_run")

@@ -154,21 +154,21 @@ class Tree(BaseModel):
         return self
         
 
-    def get_leaves(self) -> List[Node]:
-        """Get all leaf nodes in the tree (nodes with no children)."""
+    def get_leaves(self) -> list[Node]:
         if not self.root:
             return []
-        leaves = []
-    
-        def collect_leaves(node: Node):
-            if node.is_leaf():
+        leaves: list[Node] = []
+
+        def collect(node: Node):
+            if node.is_leaf() and node.status == GoalStatus.PENDING:
                 leaves.append(node)
             else:
                 for child in node.children or []:
-                    collect_leaves(child)
-        
-        collect_leaves(self.root)
+                    collect(child)
+
+        collect(self.root)
         return leaves
+
     
 
     def find_node(self, node_id: str) -> Optional[Node]:

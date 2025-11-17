@@ -25,6 +25,8 @@ class AgentSession(BaseModel):
     plan: Optional[Tree] = None
     executable_plan: Optional[List[Node]] = None
     active_goal: Optional[Node] = None
+    replan_attempts: int = 0
+    max_replans: int = 3
 
 
 def init_plan(session: AgentSession) -> AgentSession:

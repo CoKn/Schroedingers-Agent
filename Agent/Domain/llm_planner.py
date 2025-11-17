@@ -18,7 +18,10 @@ class LLMPlanner:
         self._get_tool_docs = get_tool_docs
 
     def _observation_history(self, session: AgentSession, N: int = 4) -> list[str]:
-        return [t.get("observation") for t in (session.trace or []) if "observation" in t][-N:]
+        if N == -1:
+            return [t.get("observation") for t in (session.trace or []) if "observation" in t]
+        else:
+            return [t.get("observation") for t in (session.trace or []) if "observation" in t][-N:]
     
     def _facts(self, session: AgentSession) -> list[str]:
         return [f.get("facts") for f in (session.trace or []) if "facts" in f]
