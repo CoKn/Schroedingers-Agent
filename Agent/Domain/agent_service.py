@@ -82,7 +82,8 @@ class AgentService:
                                         replan_goal=goal, 
                                         facts=self.planner._facts(session=session),
                                         latest_summary=session.last_observation,
-                                        previous_subtree=previous_subtree
+                                        previous_subtree=previous_subtree,
+                                        executed_actions=session.trace or [],
                                         )
             llm_prompt = f"Global goal: {session.user_prompt}"
 

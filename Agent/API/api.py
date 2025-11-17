@@ -231,8 +231,6 @@ async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
         with contextlib.suppress(Exception):
             await websocket.close()
 
-    
-
 @app.websocket("/ws/call_mcp")
 async def call_llm_with_mcp_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
     await websocket.accept()
@@ -263,8 +261,6 @@ async def call_llm_with_mcp_ws(websocket: WebSocket, _: None = Depends(auth_ws))
         await websocket.send_json({"error": str(e)})
         await websocket.close()
 
-
-
 @protected.get("/health")
 async def health_check():
     return {
@@ -285,8 +281,8 @@ async def agent_run(req: PromptRequest):
 
     try:
         service = AgentService(llm=llm_client, mcp=mcp_client)
-        session = AgentSession(user_prompt=req.prompt, max_steps=5)
-        result, trace = await asyncio.wait_for(service.loop_run(session), timeout=180.0)
+        session = AgentSession(user_prompt=req.prompt, max_steps=10)
+        result, trace = await asyncio.wait_for(service.loop_run(session), timeout=600.0)
         return {"result": result, "trace": trace}
     except asyncio.TimeoutError:
         raise HTTPException(status_code=500, detail="Operation timed out")
