@@ -13,7 +13,7 @@ class AgentSession(BaseModel):
     
     user_prompt: str
     state: AgentState = AgentState.PLANNING
-    max_steps: int = 5
+    max_steps: int = 10
     step_index: int = 0
     tools_meta: list[dict] = Field(default_factory=list)
     last_decision: Optional[dict] = None
