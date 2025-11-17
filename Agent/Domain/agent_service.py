@@ -425,8 +425,6 @@ class AgentService:
         if not session.plan:
             await self.generate_plan(session=session, goal=session.user_prompt)
 
-        final_observation_markdown: str = ""
-
         try:
             while (
                 not session.goal_reached
@@ -478,7 +476,7 @@ class AgentService:
                 # keep a human-readable version of the last observation
                 final_summary = await asyncio.to_thread(
                                     self.llm.call,
-                                    prompt= f"Facts: {self.planner._facts(session=session)} \n Observations: {self.planner._observation_history(session=session, N=-1)}",
+                                    prompt= f"Facts: {[cycle["summary"]["facts_generated"] for cycle in session.trace]}",
                                     system_prompt="Answer the following question / summarise the agents observations",
                                     json_mode=False,
                                 )
