@@ -9,7 +9,7 @@ Your task is to decide if any action is still needed and, if so, generate approp
 Return EXACTLY ONE valid JSON object. Choose ONE of these formats:
 
 1. When the user's goal is completely achieved:
-{{ "goal_reached": true }}
+{{ "terminate": true, "reason": "goal completed" }}
 
 2. When it's impossible or inappropriate to proceed (e.g., unmet preconditions, missing required input):
 {{ "terminate": true, "reason": "<brief explanation>" }}

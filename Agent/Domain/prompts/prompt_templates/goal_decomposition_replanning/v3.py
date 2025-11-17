@@ -46,7 +46,7 @@ You must **never** schedule a leaf action that repeats **exactly the same MCP to
 
    3.2 **Incorporate `executed_actions` (tool + argument history)**  
    - Inspect `executed_actions`, which is a JSON array of objects like:
-     - `{{"step": number, "goal": string, "mcp_tool": string, "tool_args": object, "status": string, "summary": object or string}}`
+     - `{"step": number, "goal": string, "mcp_tool": string, "tool_args": object, "status": string, "summary": object or string}`
    - Identify:
      - Actions that **failed** (e.g., errors, validation failures, missing effects).
      - Actions that **succeeded but are now redundant** (the effect is already achieved).
@@ -113,16 +113,20 @@ You must **never** schedule a leaf action that repeats **exactly the same MCP to
    - If a previous tool call returned only metadata or partial results, add steps that actually retrieve or compute the missing information.
 
 7. **MCP Tool Planning Modes (unchanged core policy)**  
-   For leaf nodes (concrete, executable actions):
 
-   - **First leaf node ONLY in document order**:
-     - Must be **completely planned**: include both `"mcp_tool"` and `"tool_args"` with a full, executable argument object.
-   - **All subsequent leaf nodes**:
-     - Must be **partially planned**: include `"mcp_tool"` but set `"tool_args": null`.
+   For **this replanned subtree as a whole** (all leaf nodes with `abstraction_score < 0.3`):
+
+   - There must be **exactly one (1) leaf node** whose `"tool_args"` is **non-null**.
+   - That **single** leaf node (the **first leaf in document order**) must be **completely planned**:
+     - Include both `"mcp_tool"` and `"tool_args"` with a full, executable argument object.
+     - You MUST NOT use empty strings, placeholder values (e.g. `"TODO"`, `"Company Name"`), or obviously invalid arguments. Only use values that are plausible and consistent with `tool_docs` and the known facts.
+   - **All other leaf nodes** in the subtree that have an `"mcp_tool"`:
+     - MUST be **partially planned**: include `"mcp_tool"` and set `"tool_args": null`.
+     - Do NOT include partial or placeholder argument objects. If you are not certain you can give valid arguments, you MUST leave `"tool_args": null`.
 
    This mixed strategy ensures:
    - The next immediate action is fully specified and can run now.
-   - Later actions remain flexible and can be refined using fresh observations.
+   - Later actions remain flexible and can be refined using fresh observations and parameter-planning logic.
 
 8. **Assumed Preconditions & Effects for Leaf Nodes (critical)**  
    For every leaf node (abstraction < 0.3) that has an `"mcp_tool"`:
@@ -188,20 +192,20 @@ You MUST respond with **ONLY valid JSON**. Do not include any explanatory text, 
 
 You are replanning a **subtree**. Treat `replan_goal` as the local root and return exactly this structure (braces shown literally here):
 
-{{
-  "root_goal": {{
+{
+  "root_goal": {
     "value": "Replanned local goal description (typically replan_goal)",
     "abstraction_score": 0.8,
     "children": [
-      {{
+      {
         "value": "Sub-goal description",
         "abstraction_score": 0.6,
         "children": [
-          {{
+          {
             "value": "First concrete action (completely planned)",
             "abstraction_score": 0.2,
             "mcp_tool": "tool_name",
-            "tool_args": {{"param": "value"}},
+            "tool_args": {"param": "value"},
             "assumed_preconditions": [
               "Precondition 1",
               "Precondition 2"
@@ -211,8 +215,8 @@ You are replanning a **subtree**. Treat `replan_goal` as the local root and retu
               "Effect 2"
             ],
             "children": []
-          }},
-          {{
+          },
+          {
             "value": "Second concrete action (partially planned)",
             "abstraction_score": 0.1,
             "mcp_tool": "another_tool_name",
@@ -224,12 +228,12 @@ You are replanning a **subtree**. Treat `replan_goal` as the local root and retu
               "Effect A"
             ],
             "children": []
-          }}
+          }
         ]
-      }}
+      }
     ]
-  }}
-}}
+  }
+}
 
 ---
 
@@ -240,12 +244,11 @@ You are replanning a **subtree**. Treat `replan_goal` as the local root and retu
 - No markdown code blocks.
 - All strings must be properly quoted.
 - All numbers must be valid floats between 0.0 and 1.0 for `"abstraction_score"`.
-- For **leaf nodes** (abstraction < 0.3):
-  - The **first leaf node in document order**:
-    - MUST have both `"mcp_tool"` and `"tool_args"` (fully specified).
-  - All subsequent leaf nodes:
-    - MUST have `"mcp_tool"` and `"tool_args": null`.
-  - **ALL** leaf nodes:
+- For **leaf nodes** (abstraction < 0.3) in this replanned subtree:
+  - There must be **exactly one** leaf node whose `"tool_args"` is **non-null**.
+  - That leaf (the first in document order) MUST have both `"mcp_tool"` and `"tool_args"` with a full, valid argument object. Do NOT use empty strings or placeholder values.
+  - Every other leaf with an `"mcp_tool"` MUST have `"tool_args": null`.
+  - **ALL** leaf nodes with an `"mcp_tool"`:
     - MUST include `"assumed_preconditions"` (array, 1–5 items).
     - MUST include `"assumed_effects"` (array, 1–5 items).
 - Leaf nodes are processed in **document order** (top to bottom, left to right in the tree).
