@@ -379,10 +379,6 @@ class AgentService:
             },
         ))
 
-        # set goal status to complete
-        if session.active_goal:
-            session.active_goal.status = GoalStatus.COMPLETED
-
         # attach summary to trace
         try:
             summary_json = json.loads(summary_raw)
@@ -472,6 +468,11 @@ class AgentService:
 
                         # continue main loop with new executable_plan
                         continue
+                    
+                    # Set goal status to completed only if step was successful
+                    # (ready to proceed and not requiring replanning)
+                    if ready and session.active_goal:
+                        session.active_goal.status = GoalStatus.COMPLETED
 
                 # keep a human-readable version of the last observation
                 facts_list = [
