@@ -480,12 +480,12 @@ class AgentService:
                     else None
                     for cycle in session.trace
                 ]
-                final_summary = await asyncio.to_thread(
-                                    self.llm.call,
-                                    prompt= f"Facts: {facts_list}",
-                                    system_prompt="Answer the following question / summarise the agents observations",
-                                    json_mode=False,
-                                )
+            final_summary = await asyncio.to_thread(
+                                self.llm.call,
+                                prompt= f"Facts: {facts_list}",
+                                system_prompt="Answer the following question / summarise the agents observations",
+                                json_mode=False,
+                            )
             return final_summary, session.trace
 
         except Exception as e:
