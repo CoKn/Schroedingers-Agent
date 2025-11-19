@@ -567,7 +567,7 @@ class AgentService:
                         # replan the current goal's subtree (simple choice)
                         replan_node = session.active_goal or session.plan.root
 
-                        new_plan =await self.generate_plan(
+                        new_plan = await self.generate_plan(
                             session=session,
                             goal=replan_node.value if replan_node else session.user_prompt,
                             replan_from_node=replan_node,
