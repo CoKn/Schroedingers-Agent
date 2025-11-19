@@ -552,8 +552,9 @@ class AgentService:
                         reason = summary_json.get("reason")
                         if reason == "goal completed":
                             session.goal_reached = True
-                        else:
-                            session.goal_reached = True  # terminate loop on any termination
+                        #TODO: check whats going on with session.goal_reached = True
+                        # else:
+                        #     session.goal_reached = True  # terminate loop on any termination
                         setattr(session, "terminate_reason", reason)
 
                     ready = summary_json.get("ready_to_proceed", True)
