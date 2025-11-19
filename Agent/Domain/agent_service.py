@@ -585,7 +585,7 @@ class AgentService:
             # keep a human-readable version of the agent's observations/facts
             facts_collected = []
             for cycle in session.trace: 
-                if type(cycle)==dict:
+                if isinstance(cycle, dict):
                     summary = cycle.get("summary")
                     if isinstance(summary, dict):
                         fg = summary.get("facts_generated")
