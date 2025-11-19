@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, Tuple
 
-from Tools.mcp_alpha_vantage_client import AlphaVantageClient
+from Tools.old_tools.mcp_alpha_vantage_client import AlphaVantageClient
 from Agent.Adapters.Outbound.alphavantage_guidance import (
     AlphaVantageValidator,
     get_alphavantage_system_prompt_enhancement

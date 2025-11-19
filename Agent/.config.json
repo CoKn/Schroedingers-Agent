@@ -1,5 +1,11 @@
 [
   {
+    "ValuationAnalysis": {
+      "type": "http",
+      "url": "http://localhost:8082/mcp/"
+    }
+  },
+  {
     "AlphaVantage": {
       "type": "http",
       "url": "http://localhost:8085/mcp/"

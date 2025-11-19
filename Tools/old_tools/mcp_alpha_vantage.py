@@ -19,8 +19,6 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 from fastmcp import FastMCP
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -470,41 +468,12 @@ class AlphaVantageClient:
 
         self.categories = categories or self.DEFAULT_CATEGORIES
         self.base_url = "https://mcp.alphavantage.co/mcp"
-        self.session: Optional[ClientSession] = None
 
     def _build_url(self) -> str:
         """Build MCP URL with API key and categories."""
         categories_str = ",".join(self.categories)
         return f"{self.base_url}?apikey={self.api_key}&categories={categories_str}"
 
-    async def __aenter__(self):
-        """Async context manager entry."""
-        url = self._build_url()
-        self._client_context = streamablehttp_client(url)
-        read, write, _ = await self._client_context.__aenter__()
-
-        self._session_context = ClientSession(read, write)
-        self.session = await self._session_context.__aenter__()
-        await self.session.initialize()
-
-        logger.info("AlphaVantage MCP client initialized")
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        if hasattr(self, '_session_context'):
-            await self._session_context.__aexit__(exc_type, exc_val, exc_tb)
-        if hasattr(self, '_client_context'):
-            await self._client_context.__aexit__(exc_type, exc_val, exc_tb)
-        logger.info("AlphaVantage MCP client closed")
-
-    async def list_tools(self) -> List[str]:
-        """Get list of available tools from AlphaVantage MCP server."""
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use 'async with' context.")
-
-        tools = (await self.session.list_tools()).tools
-        return [tool.name for tool in tools]
 
     async def call_tool(
             self,
@@ -529,17 +498,9 @@ class AlphaVantageClient:
         return result.content
 
 
-# Global client instance (initialized on first use)
-_client: Optional[AlphaVantageClient] = None
 
 
-async def get_client() -> AlphaVantageClient:
-    """Get or create the global AlphaVantage client."""
-    global _client
-    if _client is None:
-        _client = AlphaVantageClient()
-        await _client.__aenter__()
-    return _client
+
 
 
 # ============================================================================
@@ -1991,4 +1952,4 @@ if __name__ == "__main__":
     system_prompt = get_alphavantage_system_prompt()
 
     # Run the MCP server
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8085)
+    mcp.run(transport="http", host="0.0.0.0", port=8085)
