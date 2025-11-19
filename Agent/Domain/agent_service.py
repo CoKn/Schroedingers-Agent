@@ -35,7 +35,7 @@ class AgentService:
         self.events = events or EventBus()
 
 
-    async def generate_plan(self, session: AgentSession, goal: str, *, replan_from_node: Node | None = None,) -> None:
+    async def generate_plan(self, session: AgentSession, goal: str, *, replan_from_node: Node | None = None,) -> dict:
         is_replan = replan_from_node is not None
         stage = "replanning" if is_replan else "planning"
         event_type = (
@@ -177,6 +177,8 @@ class AgentService:
                 "plan": plan_summary,
             }
         ))
+
+        return new_tree
 
 
     async def plan_step(self, session: AgentSession) -> dict:
@@ -413,12 +415,12 @@ class AgentService:
 
         # case 2: planner terminates for some other reason
         if terminate_flag and reason != "goal completed":
-            session.goal_reached = True
-            setattr(session, "terminate_reason", reason)
+            # session.goal_reached = True
+            # setattr(session, "terminate_reason", reason)
 
             summary_json = {
                 "summary": f"Planner requested termination due to: {reason or ''}",
-                "terminate": True,
+                "terminate": False,
                 "reason": reason or "",
                 "ready_to_proceed": False,
                 "facts_generated": [],
@@ -520,10 +522,10 @@ class AgentService:
             },
         ))
 
-        # TODO: add planns to the trace
         # generate initial plan if needed
         if not session.plan:
             plan = await self.generate_plan(session=session, goal=session.user_prompt)
+            session.trace.append(plan)
 
         try:
             while (
@@ -565,26 +567,30 @@ class AgentService:
                         # replan the current goal's subtree (simple choice)
                         replan_node = session.active_goal or session.plan.root
 
-                        await self.generate_plan(
+                        new_plan =await self.generate_plan(
                             session=session,
                             goal=replan_node.value if replan_node else session.user_prompt,
                             replan_from_node=replan_node,
                         )
+
+                        session.trace.append(new_plan)
 
                         replan_attempts += 1
                         setattr(session, "replan_attempts", replan_attempts)
 
                         # continue main loop with new executable_plan
                         continue
-
+            
+            #TODO: change check to filter only tool traces.
             # keep a human-readable version of the agent's observations/facts
             facts_collected = []
-            for cycle in session.trace:
-                summary = cycle.get("summary")
-                if isinstance(summary, dict):
-                    fg = summary.get("facts_generated")
-                    if isinstance(fg, list):
-                        facts_collected.extend(fg)
+            for cycle in session.trace: 
+                if type(cycle)==dict:
+                    summary = cycle.get("summary")
+                    if isinstance(summary, dict):
+                        fg = summary.get("facts_generated")
+                        if isinstance(fg, list):
+                            facts_collected.extend(fg)
 
             # You could also add observation history here if you like; for now we
             # just feed facts.
