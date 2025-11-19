@@ -107,7 +107,7 @@ class AgentService:
         try:
             parsed = json.loads(response)
 
-            logger.info(parsed)
+            logger.debug("Parsed plan: %s", parsed)
 
             parsed_tree = Tree._parse_json_to_tree(parsed)
 
