@@ -18,8 +18,13 @@ from Agent.Domain.agent_prompt_config import AgentPrompts
 from Agent.Domain.agent_lifecycle import AgentSession
 from Agent.Domain.events import EventBus, AgentEvent, AgentEventType
 
-logger = logging.getLogger(__name__)
 
+logging.basicConfig(
+    level=logging.DEBUG,                 
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 
 class AgentService:
     def __init__(self, llm: LLM, mcp, events: EventBus | None = None):
@@ -30,7 +35,7 @@ class AgentService:
         self.events = events or EventBus()
 
 
-    async def generate_plan(self, session: AgentSession, goal: str, *, replan_from_node: Node | None = None,) -> None:
+    async def generate_plan(self, session: AgentSession, goal: str, *, replan_from_node: Node | None = None,) -> dict:
         is_replan = replan_from_node is not None
         stage = "replanning" if is_replan else "planning"
         event_type = (
@@ -82,7 +87,8 @@ class AgentService:
                                         replan_goal=goal, 
                                         facts=self.planner._facts(session=session),
                                         latest_summary=session.last_observation,
-                                        previous_subtree=previous_subtree
+                                        previous_subtree=previous_subtree,
+                                        executed_actions=session.trace or [],
                                         )
             llm_prompt = f"Global goal: {session.user_prompt}"
 
@@ -100,6 +106,9 @@ class AgentService:
         # deserilise json plan to plan object
         try:
             parsed = json.loads(response)
+
+            logger.debug("Parsed plan: %s", parsed)
+
             parsed_tree = Tree._parse_json_to_tree(parsed)
 
             # initial plan
@@ -168,6 +177,8 @@ class AgentService:
                 "plan": plan_summary,
             }
         ))
+
+        return new_tree
 
 
     async def plan_step(self, session: AgentSession) -> dict:
@@ -263,24 +274,52 @@ class AgentService:
 
 
     async def act(self, session: AgentSession, decision: str) -> str:
-        fn_name = decision["call_function"]
+        fn_name = decision.get("call_function")
+        if not fn_name:
+            raise ValueError(f"Missing 'call_function' in planner decision: {decision}")
+
         fn_args = decision.get("arguments", {})
         
-        # execute tool if given
-        if hasattr(self.mcp, "execute_tool"):
-            return await self.mcp.execute_tool(fn_name, fn_args)
-        
-        # find the right tool
-        tool_info = next((t for t in getattr(self.mcp, "tools_registry", []) if t["name"] == fn_name), None)
-        if not tool_info:
-            return f"Tool '{fn_name}' not found"
-        
-        # execute tool by the name found before
-        tool_result = await tool_info["session"].call_tool(fn_name, fn_args)
-        if hasattr(tool_result, "content") and isinstance(tool_result.content, list) and tool_result.content:
-            first = tool_result.content[0]
-            return getattr(first, "text", str(first))
-        return tool_result
+        try:
+            # execute tool if given
+            if hasattr(self.mcp, "execute_tool"):
+                return await self.mcp.execute_tool(fn_name, fn_args)
+            
+            # find the right tool
+            tool_info = next((t for t in getattr(self.mcp, "tools_registry", []) if t["name"] == fn_name), None)
+            if not tool_info:
+                return f"Tool '{fn_name}' not found"
+            
+            logger.debug(f"Tool info: {tool_info}")
+            logger.debug(f"Tool: '{fn_name}' with parameter: {fn_args}")
+
+            # execute tool by the name found before
+            tool_result = await tool_info["session"].call_tool(fn_name, fn_args)
+            if hasattr(tool_result, "content") and isinstance(tool_result.content, list) and tool_result.content:
+                first = tool_result.content[0]
+                return getattr(first, "text", str(first))
+            return tool_result
+        except Exception as e:
+            logger.exception("MCP tool execution failed for %s with args %s", fn_name, fn_args)
+
+            await self.events.publish(AgentEvent(
+                type=AgentEventType.ERROR,
+                data={
+                    "stage": "tool_execution",
+                    "tool": fn_name,
+                    "arguments": fn_args,
+                    "error": str(e),
+                },
+            ))
+            error_payload = {
+            "error": "tool_execution_error",
+            "tool": fn_name,
+            "arguments": fn_args,
+            "message": str(e),
+            }
+            return json.dumps(error_payload, ensure_ascii=False)
+
+
 
     async def observe(self, session: AgentSession) -> str:
 
@@ -331,7 +370,9 @@ class AgentService:
         Run a single ReAct cycle: plan -> act -> observe.
 
         Returns:
-            The raw JSON summary string produced by the LLM in `observe`.
+            The raw JSON summary string produced by the LLM in `observe`,
+            or a synthetic summary JSON when the planner decides to terminate
+            without executing a tool.
         """
         # increment step index
         session.step_index = getattr(session, "step_index", 0) + 1
@@ -339,8 +380,70 @@ class AgentService:
             session.trace = []
 
         # plan
-        decision = await self.plan_step(session)
+        decision: dict = await self.plan_step(session)
+        if decision is None:
+            decision = {}
         session.last_decision = decision
+
+        terminate_flag = bool(decision.get("terminate"))
+        reason = decision.get("reason")
+
+        # case 1: planner says goal is completed
+        if terminate_flag and reason == "goal completed":
+            session.goal_reached = True
+
+            summary_json = {
+                "summary": "Goal marked as reached by planner (no tool call executed).",
+                "goal_reached": True,
+                "terminate": True,
+                "reason": "goal completed",
+                "ready_to_proceed": False,
+                "facts_generated": [],
+            }
+            summary_raw = json.dumps(summary_json)
+
+            # record in trace
+            session.trace.append({
+                "step": session.step_index,
+                "goal": session.active_goal.value if session.active_goal else None,
+                "decision": decision,
+                "tool_result": None,
+                "summary": summary_json,
+            })
+
+            return summary_raw
+
+        # case 2: planner terminates for some other reason
+        if terminate_flag and reason != "goal completed":
+            # session.goal_reached = True
+            # setattr(session, "terminate_reason", reason)
+
+            summary_json = {
+                "summary": f"Planner requested termination due to: {reason or ''}",
+                "terminate": False,
+                "reason": reason or "",
+                "ready_to_proceed": False,
+                "facts_generated": [],
+            }
+            summary_raw = json.dumps(summary_json)
+
+            logger.warning(summary_raw)
+
+            session.trace.append({
+                "step": session.step_index,
+                "goal": session.active_goal.value if session.active_goal else None,
+                "decision": decision,
+                "tool_result": None,
+                "summary": summary_json,
+            })
+
+            return summary_raw
+
+        # case 3: normal tool execution path
+        if "call_function" not in decision:
+            raise ValueError(
+                f"Planner decision has neither 'terminate' nor 'call_function': {decision}"
+            )
 
         await self.events.publish(AgentEvent(
             type=AgentEventType.STEP_DECISION_READY,
@@ -379,7 +482,7 @@ class AgentService:
             },
         ))
 
-        # set goal status to complete
+        # mark leaf goal completed after one execution cycle
         if session.active_goal:
             session.active_goal.status = GoalStatus.COMPLETED
 
@@ -400,9 +503,7 @@ class AgentService:
         return summary_raw
 
 
-
     async def loop_run(self, session: AgentSession):
-        
         if getattr(session, "trace", None) is None:
             session.trace = []
 
@@ -421,9 +522,10 @@ class AgentService:
             },
         ))
 
-        # Generate initial plan if needed
+        # generate initial plan if needed
         if not session.plan:
-            await self.generate_plan(session=session, goal=session.user_prompt)
+            plan = await self.generate_plan(session=session, goal=session.user_prompt)
+            session.trace.append(plan)
 
         try:
             while (
@@ -434,7 +536,7 @@ class AgentService:
                 # one ReAct cycle: plan -> act -> observe
                 summary_raw = await self.run_cycle(session)
 
-                # Decide termination based on the summary json
+                # decide termination / replanning based on the summary json
                 try:
                     summary_json = json.loads(summary_raw)
                 except json.JSONDecodeError:
@@ -446,8 +548,14 @@ class AgentService:
                         session.goal_reached = True
 
                     if summary_json.get("terminate"):
-                        session.goal_reached = True
-                        setattr(session, "terminate_reason", summary_json.get("reason"))
+                        # if it's a normal completion, mark goal_reached 
+                        reason = summary_json.get("reason")
+                        if reason == "goal completed":
+                            session.goal_reached = True
+                        #TODO: check whats going on with session.goal_reached = True
+                        # else:
+                        #     session.goal_reached = True  # terminate loop on any termination
+                        setattr(session, "terminate_reason", reason)
 
                     ready = summary_json.get("ready_to_proceed", True)
 
@@ -457,29 +565,44 @@ class AgentService:
                         and not session.goal_reached
                         and replan_attempts < max_replans
                     ):
-                        # pick a node to replan from.
-                        # simple choice: replan the current goal's subtree.
+                        # replan the current goal's subtree (simple choice)
                         replan_node = session.active_goal or session.plan.root
 
-                        await self.generate_plan(
+                        new_plan = await self.generate_plan(
                             session=session,
                             goal=replan_node.value if replan_node else session.user_prompt,
                             replan_from_node=replan_node,
                         )
+
+                        session.trace.append(new_plan)
 
                         replan_attempts += 1
                         setattr(session, "replan_attempts", replan_attempts)
 
                         # continue main loop with new executable_plan
                         continue
+            
+            #TODO: change check to filter only tool traces.
+            # keep a human-readable version of the agent's observations/facts
+            facts_collected = []
+            for cycle in session.trace: 
+                if isinstance(cycle, dict):
+                    summary = cycle.get("summary")
+                    if isinstance(summary, dict):
+                        fg = summary.get("facts_generated")
+                        if isinstance(fg, list):
+                            facts_collected.extend(fg)
 
-            # keep a human-readable version of the last observation
+            # You could also add observation history here if you like; for now we
+            # just feed facts.
+            final_prompt = f"Facts: {facts_collected}"
+
             final_summary = await asyncio.to_thread(
-                                self.llm.call,
-                                prompt= f"Facts: {[cycle["summary"]["facts_generated"] for cycle in session.trace]}",
-                                system_prompt="Answer the following question / summarise the agents observations",
-                                json_mode=False,
-                                )
+                self.llm.call,
+                prompt=final_prompt,
+                system_prompt="Answer the following question / summarise the agent's observations",
+                json_mode=False,
+            )
             return final_summary, session.trace
 
         except Exception as e:
