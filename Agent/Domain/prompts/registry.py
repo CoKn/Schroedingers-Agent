@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from copy import copy
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Mapping
