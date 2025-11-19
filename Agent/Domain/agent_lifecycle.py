@@ -13,7 +13,7 @@ class AgentSession(BaseModel):
     
     user_prompt: str
     state: AgentState = AgentState.PLANNING
-    max_steps: int = 8
+    max_steps: int = 10
     step_index: int = 0
     tools_meta: list[dict] = Field(default_factory=list)
     last_decision: Optional[dict] = None
@@ -27,6 +27,7 @@ class AgentSession(BaseModel):
     active_goal: Optional[Node] = None
     replan_attempts: int = 0
     max_replans: int = 5
+    terminate_reason: Optional[str] = None
 
 
 def init_plan(session: AgentSession) -> AgentSession:

@@ -46,7 +46,7 @@ You must **never** schedule a leaf action that repeats **exactly the same MCP to
 
    3.2 **Incorporate `executed_actions` (tool + argument history)**  
    - Inspect `executed_actions`, which is a JSON array of objects like:
-     - `{"step": number, "goal": string, "mcp_tool": string, "tool_args": object, "status": string, "summary": object or string}`
+     - {{"step": number, "goal": string, "mcp_tool": string, "tool_args": object, "status": string, "summary": object or string}}
    - Identify:
      - Actions that **failed** (e.g., errors, validation failures, missing effects).
      - Actions that **succeeded but are now redundant** (the effect is already achieved).
@@ -192,20 +192,20 @@ You MUST respond with **ONLY valid JSON**. Do not include any explanatory text, 
 
 You are replanning a **subtree**. Treat `replan_goal` as the local root and return exactly this structure (braces shown literally here):
 
-{
-  "root_goal": {
+{{
+  "root_goal": {{
     "value": "Replanned local goal description (typically replan_goal)",
     "abstraction_score": 0.8,
     "children": [
-      {
+      {{
         "value": "Sub-goal description",
         "abstraction_score": 0.6,
         "children": [
-          {
+          {{
             "value": "First concrete action (completely planned)",
             "abstraction_score": 0.2,
             "mcp_tool": "tool_name",
-            "tool_args": {"param": "value"},
+            "tool_args": {{"param": "value"}},
             "assumed_preconditions": [
               "Precondition 1",
               "Precondition 2"
@@ -215,8 +215,8 @@ You are replanning a **subtree**. Treat `replan_goal` as the local root and retu
               "Effect 2"
             ],
             "children": []
-          },
-          {
+          }},
+          {{
             "value": "Second concrete action (partially planned)",
             "abstraction_score": 0.1,
             "mcp_tool": "another_tool_name",
@@ -228,12 +228,12 @@ You are replanning a **subtree**. Treat `replan_goal` as the local root and retu
               "Effect A"
             ],
             "children": []
-          }
+          }}
         ]
-      }
+      }}
     ]
-  }
-}
+  }}
+}}
 
 ---
 

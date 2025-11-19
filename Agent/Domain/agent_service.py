@@ -20,7 +20,7 @@ from Agent.Domain.events import EventBus, AgentEvent, AgentEventType
 
 
 logging.basicConfig(
-    level=logging.DEBUG,                     # or logging.DEBUG
+    level=logging.DEBUG,                 
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
@@ -272,27 +272,52 @@ class AgentService:
 
 
     async def act(self, session: AgentSession, decision: str) -> str:
-        fn_name = decision["call_function"]
+        fn_name = decision.get("call_function")
+        if not fn_name:
+            raise ValueError(f"Missing 'call_function' in planner decision: {decision}")
+
         fn_args = decision.get("arguments", {})
         
-        # execute tool if given
-        if hasattr(self.mcp, "execute_tool"):
-            return await self.mcp.execute_tool(fn_name, fn_args)
-        
-        # find the right tool
-        tool_info = next((t for t in getattr(self.mcp, "tools_registry", []) if t["name"] == fn_name), None)
-        if not tool_info:
-            return f"Tool '{fn_name}' not found"
-        
-        logger.debug(f"Tool info: {tool_info}")
-        logger.debug(f"Tool: '{fn_name}' with parameter: {fn_args}")
+        try:
+            # execute tool if given
+            if hasattr(self.mcp, "execute_tool"):
+                return await self.mcp.execute_tool(fn_name, fn_args)
+            
+            # find the right tool
+            tool_info = next((t for t in getattr(self.mcp, "tools_registry", []) if t["name"] == fn_name), None)
+            if not tool_info:
+                return f"Tool '{fn_name}' not found"
+            
+            logger.debug(f"Tool info: {tool_info}")
+            logger.debug(f"Tool: '{fn_name}' with parameter: {fn_args}")
 
-        # execute tool by the name found before
-        tool_result = await tool_info["session"].call_tool(fn_name, fn_args)
-        if hasattr(tool_result, "content") and isinstance(tool_result.content, list) and tool_result.content:
-            first = tool_result.content[0]
-            return getattr(first, "text", str(first))
-        return tool_result
+            # execute tool by the name found before
+            tool_result = await tool_info["session"].call_tool(fn_name, fn_args)
+            if hasattr(tool_result, "content") and isinstance(tool_result.content, list) and tool_result.content:
+                first = tool_result.content[0]
+                return getattr(first, "text", str(first))
+            return tool_result
+        except Exception as e:
+            logger.exception("MCP tool execution failed for %s with args %s", fn_name, fn_args)
+
+            await self.events.publish(AgentEvent(
+                type=AgentEventType.ERROR,
+                data={
+                    "stage": "tool_execution",
+                    "tool": fn_name,
+                    "arguments": fn_args,
+                    "error": str(e),
+                },
+            ))
+            error_payload = {
+            "error": "tool_execution_error",
+            "tool": fn_name,
+            "arguments": fn_args,
+            "message": str(e),
+            }
+            return json.dumps(error_payload, ensure_ascii=False)
+
+
 
     async def observe(self, session: AgentSession) -> str:
 
@@ -498,7 +523,7 @@ class AgentService:
         # TODO: add planns to the trace
         # generate initial plan if needed
         if not session.plan:
-            await self.generate_plan(session=session, goal=session.user_prompt)
+            plan = await self.generate_plan(session=session, goal=session.user_prompt)
 
         try:
             while (

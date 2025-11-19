@@ -281,7 +281,7 @@ async def agent_run(req: PromptRequest):
 
     try:
         service = AgentService(llm=llm_client, mcp=mcp_client)
-        session = AgentSession(user_prompt=req.prompt, max_steps=10)
+        session = AgentSession(user_prompt=req.prompt, max_steps=15)
         result, trace = await asyncio.wait_for(service.loop_run(session), timeout=600.0)
         return {"result": result, "trace": trace}
     except asyncio.TimeoutError:

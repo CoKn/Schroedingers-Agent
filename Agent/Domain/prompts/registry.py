@@ -1,11 +1,14 @@
 # Agent/Domain/prompts/registry.py
 from __future__ import annotations
 
+import json
+from copy import copy
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Mapping
 
 PromptKind = Literal["system", "user", "tool"]
-
+logger = logging.getLogger(__name__)
 
 class _NullDefaultMapping(dict):
     """
@@ -45,16 +48,29 @@ class PromptSpec:
         are present in kwargs to catch obvious bugs early.
         """
         # String templates: enforce required_vars if given
-        if self.required_vars and enforce_required_vars:
-            missing = self.required_vars - set(kwargs)
-            if missing:
-                raise KeyError(
-                    f"Missing vars for prompt '{self.id}': {sorted(missing)}"
-                )
+        # Make sure everything is a string before substitution
+        safe_mapping = {}
+        for k, v in kwargs.items():
+            if isinstance(v, str):
+                safe_mapping[k] = v
+            else:
+                # JSON-ify complex objects so they render nicely
+                try:
+                    safe_mapping[k] = json.dumps(v, ensure_ascii=False, indent=2)
+                except Exception:
+                    safe_mapping[k] = str(v)
 
-        mapping: Mapping[str, Any] = _NullDefaultMapping(kwargs)
-        # format_map triggers __missing__ for any absent keys
-        return self.template.format_map(mapping)
+        try:
+            # Normal path – full Python format engine
+            return self.template.format_map(safe_mapping)
+        except Exception as e:
+            logger.exception("Prompt formatting failed for template %r", self.template[:120])
+
+            # VERY simple fallback: do literal "{key}" -> value replacement
+            result = self.template
+            for k, v in safe_mapping.items():
+                result = result.replace("{" + k + "}", v)
+            return result
 
 
 class PromptRegistry:
