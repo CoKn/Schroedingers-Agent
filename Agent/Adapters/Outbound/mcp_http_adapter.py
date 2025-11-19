@@ -7,7 +7,6 @@ from mcp.client.streamable_http import streamablehttp_client
 from ._base_mcp_client import _BaseMCPClient
 from .mcp_http_auth import handle_callback, handle_redirect, InMemoryTokenStorage
 
-from pydantic import AnyUrl
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared.auth import OAuthClientMetadata
 
@@ -29,7 +28,7 @@ class MCPHttpClient(_BaseMCPClient):
         self._resource = url.rstrip("/")
         auth_provider = None
 
-        # --- OAuth (Notion etc.) ---
+        # OAuth
         if auth_config and auth_config.get("type") in ("oauth", "oauth_browser"):
             base_server = self._resource[:-4] if self._resource.endswith("/mcp") else self._resource
 
@@ -42,7 +41,6 @@ class MCPHttpClient(_BaseMCPClient):
                 server_url=base_server,
                 client_metadata=OAuthClientMetadata(
                     client_name=client_name,
-                    # NOTE: plain strings; don’t wrap with pydantic AnyUrl
                     redirect_uris=[redirect_uri],
                     grant_types=["authorization_code", "refresh_token"],
                     response_types=["code"],

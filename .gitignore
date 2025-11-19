@@ -208,3 +208,7 @@ __marimo__/
 
 
 Agent/.config.json
+
+
+.env_tokens
+test.py
