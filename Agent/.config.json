@@ -1,8 +1,14 @@
-[
+[ 
+  {
+    "Websearch_Scraping": {
+      "type": "http",
+      "url":  "http://localhost:8082/mcp/"
+    }
+  },
   {
     "ValuationAnalysis": {
       "type": "http",
-      "url": "http://localhost:8082/mcp/"
+      "url": "http://localhost:8083/mcp/"
     }
   },
   {
@@ -33,6 +39,17 @@
     "MA_Analytics": {
       "type": "http",
       "url": "http://localhost:8089/mcp/"
+    }
+  },
+  {
+    "OpenAI_LLM": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "mcp_openai.py"
+      ],
+      "cwd": "Tools",
+      "env": {}
     }
   }
 ]
