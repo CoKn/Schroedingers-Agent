@@ -9,19 +9,11 @@ def load_mock(name: str):
         return json.load(f)
 
 
-mcp = FastMCP(
-    name="Financial Data & Valuation",
-    json_response=True
-)
-
-
 # company profile (needed for comps_find_peers)
-@mcp.tool()
 def company_profile(symbol: str) -> list:
     return load_mock(f"company_profile_{symbol}")
 
 # stock screener
-@mcp.tool()
 def stock_screener(
     marketCapMoreThan: float | None = None,
     marketCapLowerThan: float | None = None,
@@ -46,24 +38,20 @@ def stock_screener(
     return load_mock("stock_screener_technology")
 
 # enterprise vlue
-@mcp.tool()
 def enterprise_values(symbol: str, limit: int | None = None, period: str | None = None) -> list:
     return load_mock(f"enterprise_values_{symbol}")
 
 # income statement
-@mcp.tool()
 def income_statement(symbol: str, limit: int | None = None, period: str | None = None) -> list:
     return load_mock(f"income_statement_{symbol}")
 
 
 #  comps find peers
-@mcp.tool()
 def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
     return load_mock(f"peers_{symbol}")
 
 
 # comps valuation range
-@mcp.tool()
 def comps_valuation_range(
     target: str,
     peers: List[str],
@@ -74,4 +62,11 @@ def comps_valuation_range(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8083)
+    symbol = "SNOW"
+    company_profile(symbol)
+    stock_screener()
+    enterprise_values(symbol)
+    income_statement(symbol)
+    peers = comps_find_peers(symbol)
+    peers
+    print(comps_valuation_range(symbol, peers))

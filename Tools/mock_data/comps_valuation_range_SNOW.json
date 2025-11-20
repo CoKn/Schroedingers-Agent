@@ -1,0 +1,14 @@
+{
+  "current_value": 75000000000,
+  "valuation_range": {
+    "low": 4849999999.999999,
+    "median": 14242200000.0,
+    "high": 29120000000.0
+  },
+  "discount_premium_pct": -81.03306666666667,
+  "peer_multiples": {
+    "min": 17.333333333333332,
+    "median": 50.865,
+    "max": 104.0
+  }
+}
