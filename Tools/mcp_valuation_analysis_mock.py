@@ -1,18 +1,6 @@
 from fastmcp import FastMCP
 from typing import List, Dict
-import requests
-import statistics
-import os
-from dotenv import load_dotenv
 
-
-# Load API key
-load_dotenv()
-FMP_API_KEY = os.getenv("FINANCIAL_MODELING_PREP_TOKEN")
-FMP_BASE = "https://financialmodelingprep.com/stable"
-
-if not FMP_API_KEY:
-    raise RuntimeError("Missing FMP_API_KEY environment variable.")
 
 mcp = FastMCP(
     name="Financial Data & Valuation",
