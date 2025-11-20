@@ -1,0 +1,52 @@
+[
+  {
+    "symbol": "SNOW",
+    "date": "2025-01-31",
+    "stockPrice": 181.51,
+    "numberOfShares": 332707000,
+    "marketCapitalization": 60389647570,
+    "minusCashAndCashEquivalents": 2628798000,
+    "addTotalDebt": 2685270000,
+    "enterpriseValue": 60446119570
+  },
+  {
+    "symbol": "SNOW",
+    "date": "2024-01-31",
+    "stockPrice": 195.64,
+    "numberOfShares": 328001000,
+    "marketCapitalization": 64170115639,
+    "minusCashAndCashEquivalents": 1762749000,
+    "addTotalDebt": 287981000,
+    "enterpriseValue": 62695347639
+  },
+  {
+    "symbol": "SNOW",
+    "date": "2023-01-31",
+    "stockPrice": 156.44,
+    "numberOfShares": 318730000,
+    "marketCapitalization": 49862121200,
+    "minusCashAndCashEquivalents": 939902000,
+    "addTotalDebt": 251658000,
+    "enterpriseValue": 49173877200
+  },
+  {
+    "symbol": "SNOW",
+    "date": "2022-01-31",
+    "stockPrice": 275.9,
+    "numberOfShares": 300273227,
+    "marketCapitalization": 82845383329,
+    "minusCashAndCashEquivalents": 1085729000,
+    "addTotalDebt": 206297000,
+    "enterpriseValue": 81965951329
+  },
+  {
+    "symbol": "SNOW",
+    "date": "2021-01-31",
+    "stockPrice": 282,
+    "numberOfShares": 287917604,
+    "marketCapitalization": 81192764328,
+    "minusCashAndCashEquivalents": 820177000,
+    "addTotalDebt": 204537000,
+    "enterpriseValue": 80577124328
+  }
+]
