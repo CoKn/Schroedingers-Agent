@@ -6,7 +6,6 @@ import os
 from dotenv import load_dotenv
 
 
-
 # Load API key
 load_dotenv()
 FMP_API_KEY = os.getenv("FINANCIAL_MODELING_PREP_TOKEN")
@@ -21,7 +20,7 @@ mcp = FastMCP(
 )
 
 # -------------------------------------------------------------
-# Helper: FMP request wrapper
+# FMP request wrapper
 # -------------------------------------------------------------
 def fmp_get(endpoint: str, params: dict) -> list:
     params = {k: v for k, v in params.items() if v is not None}
@@ -31,153 +30,288 @@ def fmp_get(endpoint: str, params: dict) -> list:
     r.raise_for_status()
     return r.json()
 
-# =============================================================
-#                    MCP TOOLS (API wrappers)
-# =============================================================
 
 # -------------------------------------------------------------
-# Company Profile (needed for comps_find_peers)
+# Internal helpers
 # -------------------------------------------------------------
-@mcp.tool()
-def company_profile(symbol: str) -> list:
-    """Fetch basic profile including sector, industry, and market cap."""
-    return fmp_get("profile", {"symbol": symbol})
+def company_profile(symbol: str) -> dict:
+    data = fmp_get("profile", {"symbol": symbol})
+    raw = data[0]
+    return {
+        "symbol": raw.get("symbol"),
+        "companyName": raw.get("companyName"),
+        "sector": raw.get("sector"),
+        "industry": raw.get("industry"),
+        "marketCap": raw.get("marketCap"),
+        "price": raw.get("price"),
+    }
 
-# -------------------------------------------------------------
-# Stock Screener
-# -------------------------------------------------------------
-@mcp.tool()
+
 def stock_screener(
     marketCapMoreThan: float | None = None,
     marketCapLowerThan: float | None = None,
     sector: str | None = None,
     industry: str | None = None,
-    betaMoreThan: float | None = None,
-    betaLowerThan: float | None = None,
     priceMoreThan: float | None = None,
     priceLowerThan: float | None = None,
-    dividendMoreThan: float | None = None,
-    dividendLowerThan: float | None = None,
-    volumeMoreThan: float | None = None,
-    volumeLowerThan: float | None = None,
-    exchange: str | None = None,
-    country: str | None = None,
-    isEtf: bool | None = None,
-    isFund: bool | None = None,
-    isActivelyTrading: bool | None = None,
-    limit: int | None = None,
-    includeAllShareClasses: bool | None = None,
+    limit: int = 5,
 ) -> list:
-    params = locals()
-    return fmp_get("company-screener", params)
+    params = {k: v for k, v in locals().items() if v is not None}
+    data = fmp_get("company-screener", params)
 
-# -------------------------------------------------------------
-# Enterprise Value
-# -------------------------------------------------------------
-@mcp.tool()
+    results = []
+    for item in data or []:
+        if isinstance(item, dict):
+            results.append({
+                "symbol": item.get("symbol"),
+                "companyName": item.get("companyName"),
+                "marketCap": item.get("marketCap"),
+                "sector": item.get("sector"),
+                "industry": item.get("industry"),
+                "price": item.get("price"),
+            })
+
+    return results
+
+
 def enterprise_values(symbol: str, limit: int | None = None, period: str | None = None) -> list:
-    params = locals()
+    params = {k: v for k, v in locals().items() if v is not None}
     return fmp_get("enterprise-values", params)
 
-# -------------------------------------------------------------
-# Income Statement
-# -------------------------------------------------------------
-@mcp.tool()
+
 def income_statement(symbol: str, limit: int | None = None, period: str | None = None) -> list:
-    params = locals()
+    params = {k: v for k, v in locals().items() if v is not None}
     return fmp_get("income-statement", params)
 
-# =============================================================
-#             INTERNAL HELPER FOR COMPS VALUATION
-# =============================================================
 
 def fetch_company_metrics(symbol: str) -> dict:
-    ev_data = enterprise_values(symbol=symbol, limit=1, period="FY")
-    if not ev_data:
-        raise ValueError(f"No EV data for {symbol}")
-    enterprise_value = ev_data[0]["enterpriseValue"]
+    """
+    Fetch consistent, annual Enterprise Value and EBITDA values.
+    Fixes issues where FMP returns mismatched periods or incorrect EV.
+    """
 
-    is_data = income_statement(symbol=symbol, limit=1, period="FY")
-    if not is_data:
-        raise ValueError(f"No IS data for {symbol}")
-    ebitda = is_data[0]["ebitda"]
+    # Pull several rows to ensure we match the correct fiscal year
+    ev_data = enterprise_values(symbol=symbol, period="annual", limit=4)
+    is_data = income_statement(symbol=symbol, period="annual", limit=4)
 
-    if ebitda is None or enterprise_value is None:
-        raise ValueError(f"Missing metrics for {symbol}")
+    # Convert to dict keyed by fiscalDateEnding
+    ev_by_year = {row["date"]: row for row in ev_data if "date" in row}
+    is_by_year = {row["date"]: row for row in is_data if "date" in row}
 
-    return {"ebitda": ebitda, "enterprise_value": enterprise_value}
+    # Find overlapping fiscal years
+    shared_years = sorted(set(ev_by_year.keys()) & set(is_by_year.keys()), reverse=True)
+
+    if not shared_years:
+        raise ValueError(f"No matching fiscal-year EV + EBITDA data for {symbol}")
+
+    # Use the most recent matched fiscal year
+    year = shared_years[0]
+    ev_row = ev_by_year[year]
+    is_row = is_by_year[year]
+
+    # FMP often returns incorrect enterpriseValue → reconstruct it manually
+    market_cap = ev_row.get("marketCap")
+    cash = ev_row.get("cashAndShortTermInvestments")
+    debt = ev_row.get("totalDebt")
+    ev_raw = ev_row.get("enterpriseValue")
+
+    # Recalculate EV when possible
+    if market_cap is not None and cash is not None and debt is not None:
+        enterprise_value = (market_cap + debt - cash)
+    else:
+        # fallback to enterpriseValue, even though it's often wrong
+        enterprise_value = ev_raw
+
+    ebitda = is_row.get("ebitda")
+
+    return {
+        "ebitda": ebitda,
+        "enterprise_value": enterprise_value,
+        "fiscal_year": year,
+    }
+
+
 
 # =============================================================
-#                  NEW MCP TOOL: comps_find_peers
+# MCP TOOL: comps_find_peers
 # =============================================================
-
 @mcp.tool()
 def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
     """
-    Automatically find comparable companies based on sector + market cap range.
+    Identify comparable peer companies for a given target ticker.
+
+    This tool:
+    1. Retrieves the target company's sector, industry, and market cap.
+    2. First attempts to find peers in the SAME industry AND sector.
+    3. If too few industry-level peers exist, it falls back to sector-only peers.
+    4. In all cases, it restricts results to companies within a similar size
+       range (30%–300% of the target's market cap).
+    5. Returns a list of peer ticker symbols ordered by relevance.
+
+    Parameters
+    ----------
+    symbol : str
+        The ticker symbol of the company to find peers for.
+    max_peers : int
+        Maximum number of peer tickers to return.
+
+    Returns
+    -------
+    List[str]
+        A list of peer tickers suitable for use in comps_valuation_range.
+
+    Agent Usage Notes
+    -----------------
+    - You do NOT need to provide sector or industry. This tool handles it.
+    - Call this tool BEFORE comps_valuation_range.
+    - Pass the returned list of peers directly into comps_valuation_range.
     """
-    # 1. Profile lookup
-    profile = company_profile(symbol)
-    if not profile:
-        raise ValueError(f"No profile data for {symbol}")
 
-    sector = profile[0]["sector"]
-    market_cap = profile[0]["mktCap"]
+    # -------------------------------
+    # 1. Retrieve profile
+    # -------------------------------
+    p = company_profile(symbol)
+    sector = p["sector"]
+    industry = p["industry"]
+    market_cap = p["marketCap"]
 
-    # 2. Screen similar companies
-    screened = stock_screener(
+    # -------------------------------
+    # 2. Industry-level peer search
+    # -------------------------------
+    industry_screen = stock_screener(
         sector=sector,
+        industry=industry,
         marketCapMoreThan=market_cap * 0.30,
-        marketCapLowerThan=market_cap * 3.00,
-        isActivelyTrading=True,
-        limit=max_peers * 2
+        marketCapLowerThan=market_cap * 3.0,
+        limit=max_peers * 5,   # expand search space
     )
 
-    # 3. Filter & limit
-    peers = [c["symbol"] for c in screened if c["symbol"] != symbol]
-    return peers[:max_peers]
+    industry_peers = [c["symbol"] for c in industry_screen if c["symbol"] != symbol]
+
+    # If industry peers are sufficient, use them
+    if len(industry_peers) >= max_peers:
+        return industry_peers[:max_peers]
+
+    # -------------------------------
+    # 3. Sector-level fallback
+    # -------------------------------
+    sector_screen = stock_screener(
+        sector=sector,
+        marketCapMoreThan=market_cap * 0.30,
+        marketCapLowerThan=market_cap * 3.0,
+        limit=max_peers * 5,
+    )
+
+    sector_peers = [c["symbol"] for c in sector_screen if c["symbol"] != symbol]
+
+    # If sector has enough peers, return trimmed list
+    if len(sector_peers) >= max_peers:
+        return sector_peers[:max_peers]
+
+    # -------------------------------
+    # 4. Combined fallback (industry + sector)
+    #    Useful if both lists exist but are small individually
+    # -------------------------------
+    combined = list(dict.fromkeys(industry_peers + sector_peers))
+
+    return combined[:max_peers]
+
+
+
 
 # =============================================================
-#          EXISTING TOOL: comps_valuation_range
+# MCP TOOL: comps_valuation_range
 # =============================================================
-
 @mcp.tool()
 def comps_valuation_range(
     target: str,
     peers: List[str],
     primary_multiple: str = "ev_ebitda"
 ) -> Dict:
+    """
+    AGENT INSTRUCTIONS
+    ------------------
+    The agent MUST pass:
+    - target = EXACT ticker returned from resolve_symbol
+    - peers = EXACT list returned from comps_find_peers
+
+    The agent MUST NOT invent ticker symbols or modify the lists.
+    The agent MUST call this tool only after both required inputs 
+    have been produced by earlier tool calls.
+
+    
+    Calculate a valuation range for a company using comparable-company
+    EV/EBITDA multiples.
+
+    This tool:
+    1. Retrieves the target company's EBITDA and enterprise value.
+    2. Retrieves each peer company's EBITDA and enterprise value.
+    3. Computes EV/EBITDA multiples for all valid peers.
+    4. Applies the peer multiples to the target's EBITDA to produce a
+       low, median, and high implied valuation.
+
+    Parameters
+    ----------
+    target : str
+        The ticker symbol of the company being valued.
+    peers : List[str]
+        A list of peer ticker symbols. Typically obtained from
+        comps_find_peers.
+    primary_multiple : str
+        Reserved for future expansion. Currently only "ev_ebitda" is used.
+
+    Returns
+    -------
+    Dict
+        {
+            "current_value": <target enterprise value>,
+            "current_ebitda": <target ebitda>,
+            "valuation_range": {
+                "low": <low implied valuation>,
+                "median": <median implied valuation>,
+                "high": <high implied valuation>
+            },
+            "peer_multiples": {
+                "min": <lowest peer multiple>,
+                "median": <median peer multiple>,
+                "max": <highest peer multiple>
+            }
+        }
+
+    Agent Usage Notes
+    -----------------
+    - Call comps_find_peers first to obtain the peer list.
+    - Use the exact output list from comps_find_peers as the `peers` argument.
+    - The tool will only compute multiples for peers with positive EBITDA.
+    - Use the resulting valuation range to analyze whether the company
+      appears undervalued or overvalued.
+    """
+
+    # Retrieve target metrics
     t = fetch_company_metrics(target)
     target_ebitda = t["ebitda"]
     target_ev = t["enterprise_value"]
 
+    # Compute peer EV/EBITDA multiples
     peer_multiples = []
     for p in peers:
         pm = fetch_company_metrics(p)
         if pm["ebitda"] > 0:
             peer_multiples.append(pm["enterprise_value"] / pm["ebitda"])
 
-    if not peer_multiples:
-        raise ValueError("No valid peer multiples available")
-
+    # Derive min / median / max multiples
     min_mult = min(peer_multiples)
     median_mult = statistics.median(peer_multiples)
     max_mult = max(peer_multiples)
 
-    low_val = target_ebitda * min_mult
-    median_val = target_ebitda * median_mult
-    high_val = target_ebitda * max_mult
-
-    discount_pct = ((median_val - target_ev) / target_ev) * 100
-
     return {
         "current_value": target_ev,
+        "current_ebitda": target_ebitda,
         "valuation_range": {
-            "low": low_val,
-            "median": median_val,
-            "high": high_val
+            "low": target_ebitda * min_mult,
+            "median": target_ebitda * median_mult,
+            "high": target_ebitda * max_mult
         },
-        "discount_premium_pct": discount_pct,
         "peer_multiples": {
             "min": min_mult,
             "median": median_mult,
@@ -186,8 +320,72 @@ def comps_valuation_range(
     }
 
 # =============================================================
+# MCP TOOL: resolve_symbol
+# =============================================================
+@mcp.tool()
+def resolve_symbol(query: str) -> dict:
+    """
+    Resolve a company name into the most appropriate ticker symbol.
+    """
+
+    # Agent should NOT control limit
+    data = fmp_get("search-name", {"query": query, "limit": 50})
+
+    if not isinstance(data, list) or not data:
+        raise ValueError(f"No symbol results found for '{query}'")
+
+    def is_valid_equity(row):
+        sym = row.get("symbol", "").upper()
+        name = row.get("name", "").upper()
+
+        bad_terms = [
+            "ETF", "ETP", "ETN", "FUND", "3X", "2X",
+            "SHORT", "LONG", "BEAR", "BULL", "LEV"
+        ]
+        if any(t in sym for t in bad_terms): return False
+        if any(t in name for t in bad_terms): return False
+        return True
+
+    equities = [r for r in data if is_valid_equity(r)]
+    if not equities:
+        raise ValueError(f"No valid equities found for '{query}'")
+
+    def rank(r):
+        exch = r.get("exchange", "").upper()
+        score = 0
+
+        # Primary listing for Mercedes
+        if exch in ("XETRA", "FRA", "DEUTSCHE BÖRSE"):
+            score += 100
+
+        # Major US exchanges
+        if exch in ("NYSE", "NASDAQ"):
+            score += 90
+
+        # OTC fallback
+        if exch == "OTC":
+            score -= 20
+
+        return score
+
+    sorted_eq = sorted(equities, key=rank, reverse=True)
+    best = sorted_eq[0]
+
+    return {
+        "symbol": best["symbol"],
+        "name": best.get("name"),
+        "exchange": best.get("exchange"),
+        "currency": best.get("currency"),
+        "alternatives": [
+            {"symbol": r["symbol"], "exchange": r.get("exchange")}
+            for r in sorted_eq[1:]
+        ]
+    }
+
+
+
+# =============================================================
 # Run server
 # =============================================================
-
 if __name__ == "__main__":
     mcp.run(transport="streamable-http", host="0.0.0.0", port=8083)
