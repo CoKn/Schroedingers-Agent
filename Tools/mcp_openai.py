@@ -77,7 +77,7 @@ def prompt_llm(
 	temperature: float = 0.2,
 	top_p: float = 1.0,
 ) -> Dict[str, Any]:
-	"""Send a prompt to an OpenAI chat model and return the response."""
+	"""Send a prompt to an OpenAI chat model and return the response. This tool is for creating reports and summaries."""
 
 	if max_tokens <= 0:
 		return {"error": "max_tokens must be positive."}
