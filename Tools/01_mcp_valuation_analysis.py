@@ -132,11 +132,17 @@ def fetch_company_metrics(symbol: str) -> dict:
 
 
 
+from typing import List, Literal
+
 # =============================================================
 # MCP TOOL: comps_find_peers
 # =============================================================
 @mcp.tool()
-def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
+def comps_find_peers(
+    symbol: str,
+    max_peers: int = 10,
+    approach: Literal["NORMAL", "CONSERVATIVE"] = "NORMAL"
+) -> List[str]:
     """
     Identify comparable peer companies for a given target ticker.
 
@@ -144,9 +150,21 @@ def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
     1. Retrieves the target company's sector, industry, and market cap.
     2. First attempts to find peers in the SAME industry AND sector.
     3. If too few industry-level peers exist, it falls back to sector-only peers.
-    4. In all cases, it restricts results to companies within a similar size
-       range (30%–300% of the target's market cap).
+    4. Market-cap range depends on `approach`:
+         - NORMAL:        0.30× to 3.00×
+         - CONSERVATIVE:  0.30× to 1.50×
     5. Returns a list of peer ticker symbols ordered by relevance.
+
+    IMPORTANT — RISK-BASED GUIDANCE
+    --------------------------------
+    If the target company is known to face *strategic*, *financial*, 
+    *market*, or *operational* risks — OR if the agent has identified 
+    unusual volatility, uncertainty, or instability — the agent should 
+    prefer **approach=\"CONSERVATIVE\"**.
+
+    The conservative mode keeps peer selection closer in size, avoiding 
+    distortion from extremely large or extremely small comparables. 
+    This produces more reliable comps for risk-sensitive situations.
 
     Parameters
     ----------
@@ -154,6 +172,10 @@ def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
         The ticker symbol of the company to find peers for.
     max_peers : int
         Maximum number of peer tickers to return.
+    approach : {"NORMAL", "CONSERVATIVE"}
+        NORMAL       = broad comps (0.3–3.0× market cap)
+        CONSERVATIVE = size-disciplined comps (0.3–1.5× market cap),
+                       recommended when risks are known.
 
     Returns
     -------
@@ -162,9 +184,14 @@ def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
 
     Agent Usage Notes
     -----------------
-    - You do NOT need to provide sector or industry. This tool handles it.
-    - Call this tool BEFORE comps_valuation_range.
-    - Pass the returned list of peers directly into comps_valuation_range.
+    - Use NORMAL for stable, diversified, or large-cap companies.
+    - Use CONSERVATIVE when:
+        • the target is undergoing market instability,
+        • the sector is volatile,
+        • financial performance is uncertain,
+        • strategic or operational risks are identified,
+        • or when you want a tighter peer set for valuation discipline.
+    - This tool should be called BEFORE comps_valuation_range.
     """
 
     # -------------------------------
@@ -176,45 +203,57 @@ def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
     market_cap = p["marketCap"]
 
     # -------------------------------
-    # 2. Industry-level peer search
+    # 2. Determine market cap bounds
+    # -------------------------------
+    lower_bound = market_cap * 0.30
+
+    if approach == "CONSERVATIVE":
+        upper_bound = market_cap * 1.50
+    else:
+        upper_bound = market_cap * 3.00
+
+    # -------------------------------
+    # 3. Industry-level peer search
     # -------------------------------
     industry_screen = stock_screener(
         sector=sector,
         industry=industry,
-        marketCapMoreThan=market_cap * 0.30,
-        marketCapLowerThan=market_cap * 3.0,
-        limit=max_peers * 5,   # expand search space
+        marketCapMoreThan=lower_bound,
+        marketCapLowerThan=upper_bound,
+        limit=max_peers * 5,
     )
 
-    industry_peers = [c["symbol"] for c in industry_screen if c["symbol"] != symbol]
+    industry_peers = [
+        c["symbol"] for c in industry_screen if c["symbol"] != symbol
+    ]
 
-    # If industry peers are sufficient, use them
     if len(industry_peers) >= max_peers:
         return industry_peers[:max_peers]
 
     # -------------------------------
-    # 3. Sector-level fallback
+    # 4. Sector-level fallback
     # -------------------------------
     sector_screen = stock_screener(
         sector=sector,
-        marketCapMoreThan=market_cap * 0.30,
-        marketCapLowerThan=market_cap * 3.0,
+        marketCapMoreThan=lower_bound,
+        marketCapLowerThan=upper_bound,
         limit=max_peers * 5,
     )
 
-    sector_peers = [c["symbol"] for c in sector_screen if c["symbol"] != symbol]
+    sector_peers = [
+        c["symbol"] for c in sector_screen if c["symbol"] != symbol
+    ]
 
-    # If sector has enough peers, return trimmed list
     if len(sector_peers) >= max_peers:
         return sector_peers[:max_peers]
 
     # -------------------------------
-    # 4. Combined fallback (industry + sector)
-    #    Useful if both lists exist but are small individually
+    # 5. Combined fallback
     # -------------------------------
     combined = list(dict.fromkeys(industry_peers + sector_peers))
 
     return combined[:max_peers]
+
 
 
 
