@@ -51,5 +51,11 @@
       "cwd": "Tools",
       "env": {}
     }
+  },
+  {
+    "Notion": {
+      "type": "http",
+      "url": "http://localhost:8081/mcp/"
+    }
   }
 ]
