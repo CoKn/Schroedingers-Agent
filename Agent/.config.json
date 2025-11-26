@@ -42,7 +42,7 @@
     }
   },
   {
-    "OpenAI_LLM": {
+    "LLM": {
       "type": "stdio",
       "command": "python",
       "args": [

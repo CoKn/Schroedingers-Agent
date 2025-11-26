@@ -124,6 +124,20 @@ def update_page(page_id: str, data: dict):
     Args:
         page_id: UUID of the page to patch.
         data: Payload matching https://api.notion.com/v1/pages/{page_id} requirements.
+            Example::
+
+                {
+                    "properties": {
+                        "Description": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {"content": "Snowflake summary"}
+                                }
+                            ]
+                        }
+                    }
+                }
     """
     return notion_adapter.update_page(page_id, data)
 
