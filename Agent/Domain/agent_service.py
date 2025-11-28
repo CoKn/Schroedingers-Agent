@@ -5,8 +5,10 @@ import asyncio
 import json
 import logging
 from typing import Callable
+import datetime
 
 from Agent.Ports.Outbound.llm_interface import LLM
+from Agent.Ports.Outbound.memory_interface import Memory
 
 from Agent.Domain.goal_state_enum import GoalStatus
 from Agent.Domain.utils.json_markdown import json_to_markdown, format_tool_output_for_llm
@@ -27,12 +29,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class AgentService:
-    def __init__(self, llm: LLM, mcp, events: EventBus | None = None):
+    def __init__(self, llm: LLM, memory: Memory, mcp, events: EventBus | None = None):
         self.llm = llm
         self.mcp = mcp
+        self.memory = memory
         self._tools_meta_cache: list[dict] | None = None
         self.planner = LLMPlanner(llm=self.llm, get_tool_docs=make_get_tool_docs(self.mcp))
         self.events = events or EventBus()
+        self._memory_collections: dict[str, bool] = {}
 
 
     async def generate_plan(self, session: AgentSession, goal: str, *, replan_from_node: Node | None = None,) -> dict:
@@ -164,9 +168,8 @@ class AgentService:
         except Exception:
             plan_summary = None
 
-        await self.events.publish(AgentEvent(
-            type=AgentEventType.PLAN_GENERATED,
-            data={
+
+        data = {
                 "goal": goal,
                 "step_index": session.step_index,
                 "leaf_count": len(session.executable_plan or []),
@@ -175,8 +178,28 @@ class AgentService:
                 "replanned_from_node_id": session.plan.replanned_from_node_id,
                 "is_replan": is_replan,
                 "plan": plan_summary,
+                "session_id": str(session.session_id),
+                "timestamp": int(datetime.datetime.now(datetime.timezone.utc).timestamp())
             }
+
+        await self.events.publish(AgentEvent(
+            type=AgentEventType.PLAN_GENERATED,
+            data=data
         ))
+
+        # save plan to db
+        await self._ensure_memory_collection("plans")
+        plan_id = f"{session.session_id}-plan-r{session.plan.revision}"
+        plan_document = json.dumps(plan_summary or {}, ensure_ascii=False)
+        plan_metadata = data.copy()
+        plan_metadata.pop("plan", None)
+        await self.memory.save(
+            "plans",
+            ids=[plan_id],
+            documents=[plan_document],
+            metadatas=[plan_metadata],
+            embeddings=None,
+        )
 
         return new_tree
 
@@ -491,14 +514,40 @@ class AgentService:
             summary_json = json.loads(summary_raw)
         except json.JSONDecodeError:
             summary_json = {"_parse_error": True, "raw": summary_raw}
-
-        session.trace.append({
+        
+        data = {
             "step": session.step_index,
             "goal": session.active_goal.value if session.active_goal else None,
             "decision": decision,
             "tool_result": tool_result,
             "summary": summary_json,
-        })
+            "session_id": str(session.session_id)
+        }
+        session.trace.append(data.copy())
+
+        # save trace to db
+        await self._ensure_memory_collection("traces")
+        trace_id = f"{session.session_id}-step-{session.step_index}"
+        trace_document = json.dumps(data, ensure_ascii=False)
+
+        # TODO: Fix this code
+        trace_metadata = {
+            "session_id": str(session.session_id),
+            "step": session.step_index,
+            "goal": (session.active_goal.value if session.active_goal else "") or "",
+            "decision_call": decision.get("call_function"),
+            "decision_requested_termination": bool(decision.get("terminate")),
+            "decision_has_args": bool(decision.get("arguments")),
+            "timestamp": int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        }
+        await self.memory.save(
+            "traces",
+            ids=[trace_id],
+            documents=[trace_document],
+            metadatas=[trace_metadata],
+            embeddings=None,
+        )
+
 
         return summary_raw
 
@@ -612,3 +661,13 @@ class AgentService:
                 data={"stage": "loop_run", "error": str(e)},
             ))
             return f"Agent error: {e}", getattr(session, "trace", [])
+
+    # TODO: Remove this code
+    async def _ensure_memory_collection(self, name: str) -> None:
+        """Ensure a memory collection is connected once and cached."""
+
+        if self._memory_collections.get(name):
+            return
+
+        await self.memory.connect(name)
+        self._memory_collections[name] = True

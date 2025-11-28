@@ -10,12 +10,15 @@ import logging
 from typing import Optional
 from fastapi.responses import PlainTextResponse
 import contextlib 
+from pathlib import Path
 
 from Agent.Domain.events import EventBus, AgentEvent, AgentEventType
 from Agent.API.deps import verify_token, auth_ws
 from Agent.Adapters.Outbound.azure_openai_adapter import AzureOpenAIAdapter
 from Agent.Adapters.Outbound.openai_adapter import OpenAIAdapter
 from Agent.Adapters.Outbound.mcp_adapter import MCPAdapter
+from Agent.Adapters.Outbound.chromadb_adapter import ChromadbAdapter
+
 from Agent.Domain.agent_service import AgentService
 from Agent.Domain.agent_lifecycle import AgentSession
 
@@ -50,6 +53,10 @@ else:
 
 
 mcp_client = MCPAdapter(llm=llm_client)
+
+path = Path(__file__).resolve().parents[2] / "DB"
+chromadb = ChromadbAdapter(persist_directory=str(path))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -163,7 +170,7 @@ async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
 
         # Create a dedicated EventBus for this session
         events = EventBus()
-        service = AgentService(llm=llm_client, mcp=mcp_client, events=events)
+        service = AgentService(llm=llm_client, mcp=mcp_client, memory=chromadb, events=events)
         session = AgentSession(user_prompt=prompt, max_steps=5)
 
         async def pump_events() -> None:
@@ -280,7 +287,7 @@ async def agent_run(req: PromptRequest):
         raise HTTPException(status_code=503, detail="MCP services not available")
 
     try:
-        service = AgentService(llm=llm_client, mcp=mcp_client)
+        service = AgentService(llm=llm_client, mcp=mcp_client, memory=chromadb)
         session = AgentSession(user_prompt=req.prompt, max_steps=15)
         result, trace = await asyncio.wait_for(service.loop_run(session), timeout=600.0)
         return {"result": result, "trace": trace}

@@ -3,6 +3,7 @@ from Agent.Domain.planning_mode_enum import PlanningMode
 from Agent.Domain.plan import Tree, Node
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
+from uuid import UUID, uuid4
 
 
 class AgentSession(BaseModel):
@@ -10,7 +11,8 @@ class AgentSession(BaseModel):
     
     plan: Tree | None = None
     plan_revisions: list[Tree] = []
-    
+
+    session_id: UUID = Field(default_factory=uuid4)
     user_prompt: str
     state: AgentState = AgentState.PLANNING
     max_steps: int = 10
