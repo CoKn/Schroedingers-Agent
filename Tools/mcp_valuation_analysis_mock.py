@@ -63,6 +63,7 @@ def income_statement(symbol: str, limit: int | None = None, period: str | None =
 #  comps find peers
 @mcp.tool()
 def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
+    """Finds companies that have a similar performance."""
     return load_mock(f"peers_{symbol}")
 
 
