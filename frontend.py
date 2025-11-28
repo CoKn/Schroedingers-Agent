@@ -23,6 +23,8 @@ STATUS_COLORS = {
     "FAILED": "#ef4444",
 }
 
+REPLANNED_NODE_COLOR = "#a855f7"
+
 
 # --- Basic infra / helpers ----------------------------------------------------
 
@@ -223,6 +225,19 @@ def _node_label(node: Dict[str, Any]) -> str:
     return str(node.get("id", "Node"))
 
 
+def _wrap_label_text(label: str, *, words_per_line: int = 3) -> str:
+    """Insert line breaks so long labels don't overflow the node."""
+    words = label.split()
+    if len(words) <= words_per_line:
+        return label
+
+    lines = [
+        " ".join(words[i : i + words_per_line])
+        for i in range(0, len(words), words_per_line)
+    ]
+    return "<br>".join(lines)
+
+
 def _render_plan_tree_node(node: Any, *, level: int = 0) -> None:
     """Recursive plan tree renderer (roughly inspired by TreeNode.tsx).:contentReference[oaicite:2]{index=2}"""
     if not isinstance(node, dict):
@@ -331,6 +346,7 @@ def _assign_positions(
             "tool": node.get("mcp_tool") or "",
             "abstraction": node.get("abstraction_score"),
             "goal_text": node.get("goal") or node.get("value") or "",
+            "supersedes": bool(node.get("supersedes_node_id")),
         }
     )
     return x
@@ -353,11 +369,15 @@ def _build_plan_graph(tree_root: Dict[str, Any]):
 
     node_x = [n["x"] for n in nodes]
     node_y = [n["y"] for n in nodes]
-    node_colors = [STATUS_COLORS.get(n["status"], "#94a3b8") for n in nodes]
+    node_colors = [
+        REPLANNED_NODE_COLOR if n["supersedes"] else STATUS_COLORS.get(n["status"], "#94a3b8")
+        for n in nodes
+    ]
     hover_text = [
         f"<b>{n['label']}</b><br>Status: {n['status']}<br>Tool: {n['tool'] or '—'}"
         f"<br>Abstraction: {n['abstraction'] if n['abstraction'] is not None else '—'}"
         f"<br>Goal: {n['goal_text'] or '—'}"
+        f"<br>Replanned replacement: {'Yes' if n['supersedes'] else 'No'}"
         for n in nodes
     ]
 
@@ -376,7 +396,7 @@ def _build_plan_graph(tree_root: Dict[str, Any]):
             x=node_x,
             y=node_y,
             mode="markers+text",
-            text=[n["label"] for n in nodes],
+            text=[_wrap_label_text(n["label"]) for n in nodes],
             textposition="top center",
             marker=dict(
                 size=18,
@@ -641,6 +661,9 @@ def main() -> None:
                     st.info("Unable to build plan graph from the provided data.")
                 else:
                     st.plotly_chart(fig, use_container_width=True)
+                    st.caption(
+                        "Purple nodes indicate goals that supersede an earlier plan segment after replanning."
+                    )
 
 
 if __name__ == "__main__":
