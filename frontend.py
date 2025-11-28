@@ -8,11 +8,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional, Set
 
 import chromadb
+import plotly.graph_objects as go
 import streamlit as st
 
 
 # Adjust if your DB lives somewhere else
 DB_DIR = Path(__file__).resolve().parent / "DB"
+
+STATUS_COLORS = {
+    "PENDING": "#fbbf24",
+    "IN_PROGRESS": "#38bdf8",
+    "COMPLETED": "#22c55e",
+    "ERROR": "#ef4444",
+    "FAILED": "#ef4444",
+}
 
 
 # --- Basic infra / helpers ----------------------------------------------------
@@ -283,6 +292,113 @@ def _render_plan_tree_node(node: Any, *, level: int = 0) -> None:
             _render_plan_tree_node(child, level=level + 1)
 
 
+def _assign_positions(
+    node: Dict[str, Any],
+    *,
+    depth: int,
+    next_x: List[float],
+    nodes: List[Dict[str, Any]],
+    edges: List[Tuple[str, str]],
+) -> float:
+    node_id = str(node.get("id") or f"node-{len(nodes)}")
+    children = [c for c in (node.get("children") or []) if isinstance(c, dict)]
+    child_xs: List[float] = []
+    for child in children:
+        child_id = str(child.get("id") or f"node-{len(nodes)+len(child_xs)}")
+        edges.append((node_id, child_id))
+        child_x = _assign_positions(
+            child,
+            depth=depth + 1,
+            next_x=next_x,
+            nodes=nodes,
+            edges=edges,
+        )
+        child_xs.append(child_x)
+
+    if child_xs:
+        x = sum(child_xs) / len(child_xs)
+    else:
+        x = next_x[0]
+        next_x[0] += 1.0
+
+    nodes.append(
+        {
+            "id": node_id,
+            "x": x,
+            "y": -depth,
+            "label": _node_label(node),
+            "status": str(node.get("status", "pending")).upper(),
+            "tool": node.get("mcp_tool") or "",
+            "abstraction": node.get("abstraction_score"),
+            "goal_text": node.get("goal") or node.get("value") or "",
+        }
+    )
+    return x
+
+
+def _build_plan_graph(tree_root: Dict[str, Any]):
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Tuple[str, str]] = []
+    _assign_positions(tree_root, depth=0, next_x=[0.0], nodes=nodes, edges=edges)
+    if not nodes:
+        return None
+
+    id_to_node = {n["id"]: n for n in nodes}
+    edge_x: List[float] = []
+    edge_y: List[float] = []
+    for src, dst in edges:
+        if src in id_to_node and dst in id_to_node:
+            edge_x.extend([id_to_node[src]["x"], id_to_node[dst]["x"], None])
+            edge_y.extend([id_to_node[src]["y"], id_to_node[dst]["y"], None])
+
+    node_x = [n["x"] for n in nodes]
+    node_y = [n["y"] for n in nodes]
+    node_colors = [STATUS_COLORS.get(n["status"], "#94a3b8") for n in nodes]
+    hover_text = [
+        f"<b>{n['label']}</b><br>Status: {n['status']}<br>Tool: {n['tool'] or '—'}"
+        f"<br>Abstraction: {n['abstraction'] if n['abstraction'] is not None else '—'}"
+        f"<br>Goal: {n['goal_text'] or '—'}"
+        for n in nodes
+    ]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=edge_x,
+            y=edge_y,
+            mode="lines",
+            line=dict(color="#cccccc", width=1.5),
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode="markers+text",
+            text=[n["label"] for n in nodes],
+            textposition="top center",
+            marker=dict(
+                size=18,
+                color=node_colors,
+                showscale=False,
+                line=dict(color="#333", width=1),
+            ),
+            hoverinfo="text",
+            hovertext=hover_text,
+        )
+    )
+
+    fig.update_layout(
+        margin=dict(t=10, l=10, r=10, b=10),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        showlegend=False,
+        hovermode="closest",
+    )
+    return fig
+
+
 def render_plan_tree_section(plan: Dict[str, Any], plan_meta: Dict[str, Any]) -> None:
     st.subheader("Plan Overview")
 
@@ -498,7 +614,7 @@ def main() -> None:
             desired_revision=int(plan_revision) or None,
         )
 
-    tab_timeline, tab_plan = st.tabs(["Timeline", "Plan Tree"])
+    tab_timeline, tab_plan, tab_graph = st.tabs(["Timeline", "Plan Tree", "Plan Graph"])
 
     with tab_timeline:
         render_timeline_section(trace_steps)
@@ -511,6 +627,20 @@ def main() -> None:
             )
         else:
             render_plan_tree_section(plan, plan_meta or {})
+
+    with tab_graph:
+        if plan is None:
+            st.info("No plan data available to render.")
+        else:
+            tree_root = (plan or {}).get("tree_structure") or {}
+            if not tree_root:
+                st.info("Plan does not include a tree structure to visualise.")
+            else:
+                fig = _build_plan_graph(tree_root)
+                if fig is None:
+                    st.info("Unable to build plan graph from the provided data.")
+                else:
+                    st.plotly_chart(fig, use_container_width=True)
 
 
 if __name__ == "__main__":
