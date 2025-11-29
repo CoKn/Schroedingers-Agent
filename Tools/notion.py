@@ -32,6 +32,18 @@ class NotionAdapter:
         if not self.access_token:
             logging.error("No Notion access token provided.")
             return None
+        
+        payload = filter or {}
+        top_keys = set(payload.keys())
+        looks_like_bare_filter = (
+            "filter" not in top_keys
+            and "sorts" not in top_keys
+            and "page_size" not in top_keys
+            and "start_cursor" not in top_keys
+        )
+        if looks_like_bare_filter:
+            payload = {"filter": payload}
+            
         response = requests.post(url, headers=self.headers, json=filter)
         if response.status_code == 200:
             return response.json()
@@ -104,16 +116,39 @@ def query_database(database_id: str, filter: dict):
     """Run a Notion database query.
 
     Args:
-        database_id: UUID of the database to search.
-        filter: Full request body for the query endpoint (filters, sorts, page size, etc.).
-            Example::
+        database_id:
+            UUID of the database to search.
+        filter:
+            Full request body for the query endpoint (filters, sorts, page size, etc.).
+
+            Example (filter by select status and sort by last edited):
 
                 {
-                    "filter": {"property": "Status", "select": {"equals": "In Progress"}},
-                    "sorts": [{"property": "Last edited", "direction": "descending"}],
+                    "filter": {
+                        "property": "Status",
+                        "select": { "equals": "In Progress" }
+                    },
+                    "sorts": [
+                        {
+                            "property": "Last edited",
+                            "direction": "descending"
+                        }
+                    ],
                     "page_size": 10
                 }
+
+            Example (filter pages where the 'Description' property exists / is set):
+
+                {
+                    "filter": {
+                        "property": "Description",
+                        "rich_text": {
+                            "is_not_empty": true
+                        }
+                    }
+                }
     """
+
     return notion_adapter.query_database(database_id, filter)
 
 
