@@ -1,4 +1,4 @@
-# 
+# Agent/Domain/agent_service.py
 from __future__ import annotations
 
 import asyncio
@@ -87,13 +87,23 @@ class AgentService:
         elif stage == "replanning":
             previous_subtree = replan_from_node.to_dict(include_children=True)
             spec = REGISTRY.get(*AgentPrompts.goal_decomposition_replanning)
-            system_prompt = spec.render(tool_docs=tool_docs,
-                                        replan_goal=goal, 
-                                        facts=self.planner._facts(session=session),
-                                        latest_summary=session.last_observation,
-                                        previous_subtree=previous_subtree,
-                                        executed_actions=session.trace or [],
-                                        )
+
+            # Use the last structured step summary (JSON), not the raw tool output
+            latest_summary = ""
+            if getattr(session, "last_step_summary", None) is not None:
+                try:
+                    latest_summary = json.dumps(session.last_step_summary, ensure_ascii=False)
+                except TypeError:
+                    latest_summary = str(session.last_step_summary)
+
+            system_prompt = spec.render(
+                tool_docs=tool_docs,
+                replan_goal=goal,
+                facts=self.planner._facts(session=session),
+                latest_summary=latest_summary,
+                previous_subtree=previous_subtree,
+                executed_actions=session.trace or [],
+            )
             llm_prompt = f"Global goal: {session.user_prompt}"
 
         else:
@@ -343,7 +353,6 @@ class AgentService:
             return json.dumps(error_payload, ensure_ascii=False)
 
 
-
     async def observe(self, session: AgentSession) -> str:
 
         # collect context about the last action
@@ -385,8 +394,50 @@ class AgentService:
         return observation
 
     # TODO: add seperate check for termination
-    def check_termination(self, session: AgentSession):
-        pass
+    def check_termination(self, session: AgentSession) -> tuple[bool, str | None]:
+        """
+        Inspect the current plan/tree and execution queue to decide whether
+        the *global* goal is completed or the agent should stop for other reasons.
+
+        Returns:
+            (should_stop, reason)
+            reason is one of:
+                - "goal_completed"
+                - "no_executable_goals_remaining"
+                - "no_plan"
+                - None (keep going)
+        """
+        # no plan at all -> nothing to do, but treat as "no_plan", not success
+        if not session.plan or not session.plan.root:
+            return True, "no_plan"
+
+        # current leaves in the latest plan revision
+        leaves = session.plan.get_leaves() or []
+
+        # if there are no leaves at all, consider it trivially completed
+        if not leaves:
+            return True, "goal_completed"
+
+        # determine completion status of leaves
+        def is_completed(node):
+            status = getattr(node, "status", None)
+            return status == GoalStatus.COMPLETED
+
+        all_completed = all(is_completed(n) for n in leaves)
+        any_incomplete = any(not is_completed(n) for n in leaves)
+
+        # case 1: all leaves are completed => global goal reached
+        if all_completed:
+            return True, "goal_completed"
+
+        # case 2: some leaves are incomplete, but the execution queue is empty:
+        # we've exhausted all planned executable steps but didn't finish.
+        if (not session.executable_plan) or len(session.executable_plan) == 0:
+            return True, "no_executable_goals_remaining"
+
+        # otherwise: still work to do
+        return False, None
+
 
     async def run_cycle(self, session: AgentSession) -> str:
         """
@@ -409,7 +460,36 @@ class AgentService:
         session.last_decision = decision
 
         terminate_flag = bool(decision.get("terminate"))
+        abort_step_flag = bool(decision.get("abort_step"))
         reason = decision.get("reason")
+
+        # case 0: planner aborts this step (no tool call, but not full termination)
+        if abort_step_flag and not terminate_flag and "call_function" not in decision:
+            summary_json = {
+                "summary": f"Planner aborted this step: {reason or ''}",
+                "abort_step": True,
+                "terminate": False,
+                "goal_reached": False,
+                "reason": reason or "",
+                "ready_to_proceed": False,  # trigger replanning in loop_run
+                "facts_generated": [],
+            }
+            summary_raw = json.dumps(summary_json, ensure_ascii=False)
+
+            # record in trace
+            session.trace.append({
+                "step": session.step_index,
+                "goal": session.active_goal.value if session.active_goal else None,
+                "decision": decision,
+                "tool_result": None,
+                "summary": summary_json,
+                "facts": [],
+                "session_id": str(session.session_id),
+            })
+
+
+            return summary_raw
+
 
         # case 1: planner says goal is completed
         if terminate_flag and reason == "goal completed":
@@ -432,14 +512,33 @@ class AgentService:
                 "decision": decision,
                 "tool_result": None,
                 "summary": summary_json,
+                "facts": [],
+                "session_id": str(session.session_id),
             })
+
+
+            # TODO: clean code up seems redundant
+            trace_metadata = {
+                "session_id": str(session.session_id),
+                "step": session.step_index,
+                "goal": (session.active_goal.value if session.active_goal else "") or "",
+                "decision_call": decision.get("call_function"),
+                "decision_requested_termination": bool(decision.get("terminate")),
+                "decision_has_args": bool(decision.get("arguments")),
+                "timestamp": int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+            }
+            await self.memory.save(
+                "traces",
+                ids=[trace_id],
+                documents=[trace_document],
+                metadatas=[trace_metadata],
+                embeddings=None,
+            )
 
             return summary_raw
 
         # case 2: planner terminates for some other reason
         if terminate_flag and reason != "goal completed":
-            # session.goal_reached = True
-            # setattr(session, "terminate_reason", reason)
 
             summary_json = {
                 "summary": f"Planner requested termination due to: {reason or ''}",
@@ -459,6 +558,26 @@ class AgentService:
                 "tool_result": None,
                 "summary": summary_json,
             })
+
+
+            # TODO: clean code up seems redundant
+            trace_metadata = {
+                "session_id": str(session.session_id),
+                "step": session.step_index,
+                "goal": (session.active_goal.value if session.active_goal else "") or "",
+                "decision_call": decision.get("call_function"),
+                "decision_requested_termination": bool(decision.get("terminate")),
+                "decision_has_args": bool(decision.get("arguments")),
+                "timestamp": int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+            }
+            await self.memory.save(
+                "traces",
+                ids=[trace_id],
+                documents=[trace_document],
+                metadatas=[trace_metadata],
+                embeddings=None,
+            )
+
 
             return summary_raw
 
@@ -510,18 +629,27 @@ class AgentService:
             session.active_goal.status = GoalStatus.COMPLETED
 
         # attach summary to trace
+                # attach summary to trace
         try:
             summary_json = json.loads(summary_raw)
         except json.JSONDecodeError:
             summary_json = {"_parse_error": True, "raw": summary_raw}
-        
+
+        # mirror facts_generated -> flat "facts" for cross-step reuse
+        facts: list[str] = []
+        if isinstance(summary_json, dict):
+            fg = summary_json.get("facts_generated")
+            if isinstance(fg, list):
+                facts = [str(f) for f in fg]
+
         data = {
             "step": session.step_index,
             "goal": session.active_goal.value if session.active_goal else None,
             "decision": decision,
             "tool_result": tool_result,
             "summary": summary_json,
-            "session_id": str(session.session_id)
+            "facts": facts,
+            "session_id": str(session.session_id),
         }
         session.trace.append(data.copy())
 
@@ -556,6 +684,7 @@ class AgentService:
         if getattr(session, "trace", None) is None:
             session.trace = []
 
+        # initialise state if not already set
         session.goal_reached = getattr(session, "goal_reached", False)
         session.step_index = getattr(session, "step_index", 0)
         max_steps = getattr(session, "max_steps", 10)
@@ -577,45 +706,61 @@ class AgentService:
             session.trace.append(plan)
 
         try:
-            while (
-                not session.goal_reached
-                and session.step_index < max_steps
-                and (session.executable_plan is not None and len(session.executable_plan) > 0)
-            ):
-                # one ReAct cycle: plan -> act -> observe
+            # main loop: rely on structural termination + max_steps
+            while not session.goal_reached and session.step_index < max_steps:
+
+                # 1) structural termination check (plan-based)
+                should_stop, stop_reason = self.check_termination(session)
+                if should_stop:
+
+                    # only mark global goal reached if the reason is "goal_completed"
+                    session.goal_reached = (stop_reason == "goal_completed")
+                    setattr(session, "terminate_reason", stop_reason)
+                    break
+
+                # if there is nothing executable, there is no point in continuing
+                if not session.executable_plan or len(session.executable_plan) == 0:
+
+                    if not getattr(session, "terminate_reason", None):
+                        setattr(session, "terminate_reason", "no_executable_goals_remaining")
+                    break
+
+                # 2) one ReAct cycle: plan_step -> act -> observe
                 summary_raw = await self.run_cycle(session)
 
-                # decide termination / replanning based on the summary json
+                # 3) interpret step summary (termination / replanning)
                 try:
                     summary_json = json.loads(summary_raw)
                 except json.JSONDecodeError:
                     summary_json = {}
 
                 if isinstance(summary_json, dict):
-                    # step summary can signal completion / termination
-                    if summary_json.get("goal_reached"):
-                        session.goal_reached = True
-
+                    
+                    session.last_step_summary = summary_json
+                    # hard termination requested by the step summary (e.g. serious error)
                     if summary_json.get("terminate"):
-                        # if it's a normal completion, mark goal_reached 
                         reason = summary_json.get("reason")
-                        if reason == "goal completed":
-                            session.goal_reached = True
-                        #TODO: check whats going on with session.goal_reached = True
-                        # else:
-                        #     session.goal_reached = True  # terminate loop on any termination
                         setattr(session, "terminate_reason", reason)
 
+                        # TODO: check this here in the prompt
+                        # honour explicit "goal_reached" from the summary as a hint
+                        if summary_json.get("goal_reached"):
+                            session.goal_reached = True
+
+                        # we treat this as an immediate stop, independent of plan state
+                        break
+
+                    # normal case: ready / not ready to proceed
                     ready = summary_json.get("ready_to_proceed", True)
 
-                    # replanning trigger
+                    # replanning trigger if the step summary says we can't proceed
                     if (
                         not ready
                         and not session.goal_reached
                         and replan_attempts < max_replans
                     ):
                         # replan the current goal's subtree (simple choice)
-                        replan_node = session.active_goal or session.plan.root
+                        replan_node = session.active_goal or (session.plan.root if session.plan else None)
 
                         new_plan = await self.generate_plan(
                             session=session,
@@ -630,11 +775,14 @@ class AgentService:
 
                         # continue main loop with new executable_plan
                         continue
-            
-            #TODO: change check to filter only tool traces.
-            # keep a human-readable version of the agent's observations/facts
+
+                # if ready_to_proceed=True and no replanning, just go to next iteration.
+                # structural termination will be re-evaluated at the top of the loop.
+
+            # TODO: Check if this is still needed
+            # 4) after loop: collect facts and produce a final natural-language summary
             facts_collected = []
-            for cycle in session.trace: 
+            for cycle in session.trace:
                 if isinstance(cycle, dict):
                     summary = cycle.get("summary")
                     if isinstance(summary, dict):
@@ -642,8 +790,7 @@ class AgentService:
                         if isinstance(fg, list):
                             facts_collected.extend(fg)
 
-            # You could also add observation history here if you like; for now we
-            # just feed facts.
+            # You could also add observation history here; for now we just feed facts.
             final_prompt = f"Facts: {facts_collected}"
 
             final_summary = await asyncio.to_thread(
@@ -661,6 +808,7 @@ class AgentService:
                 data={"stage": "loop_run", "error": str(e)},
             ))
             return f"Agent error: {e}", getattr(session, "trace", [])
+
 
     # TODO: Remove this code
     async def _ensure_memory_collection(self, name: str) -> None:

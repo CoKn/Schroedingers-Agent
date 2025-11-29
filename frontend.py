@@ -51,12 +51,41 @@ def _try_parse_json(raw: str | None) -> Any:
         return raw
 
 
+def _parse_timestamp(value: Any) -> Optional[int]:
+    """Best-effort conversion of assorted timestamp formats to epoch seconds."""
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if candidate.endswith("Z"):
+            candidate = candidate[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(candidate)
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    return None
+
+
+def _extract_meta_timestamp(meta: Dict[str, Any]) -> Optional[int]:
+    for key in ("timestamp_epoch", "timestamp", "created_at", "updated_at"):
+        if key in meta:
+            ts = _parse_timestamp(meta[key])
+            if ts is not None:
+                return ts
+    return None
+
+
 def _list_session_ids(
     client: chromadb.PersistentClient,
     *,
     limit_per_collection: int = 1000,
 ) -> List[str]:
-    session_ids: Set[str] = set()
+    session_latest_ts: Dict[str, Optional[int]] = {}
     for name in ("traces", "plans"):
         try:
             collection = client.get_collection(name)
@@ -69,12 +98,31 @@ def _list_session_ids(
             continue
 
         for meta in records.get("metadatas") or []:
-            if isinstance(meta, dict):
-                session_value = meta.get("session_id")
-                if isinstance(session_value, str) and session_value.strip():
-                    session_ids.add(session_value.strip())
+            if not isinstance(meta, dict):
+                continue
+            session_value = meta.get("session_id")
+            if not isinstance(session_value, str):
+                continue
+            session_id = session_value.strip()
+            if not session_id:
+                continue
 
-    return sorted(session_ids)
+            ts = _extract_meta_timestamp(meta)
+            existing = session_latest_ts.get(session_id)
+            if ts is not None:
+                if existing is None or ts > existing:
+                    session_latest_ts[session_id] = ts
+            elif session_id not in session_latest_ts:
+                session_latest_ts[session_id] = None
+
+    def _sort_key(item: Tuple[str, Optional[int]]) -> Tuple[float, str]:
+        session_id, ts = item
+        if ts is None:
+            return (float("inf"), session_id)
+        return (-float(ts), session_id)
+
+    sorted_sessions = sorted(session_latest_ts.items(), key=_sort_key)
+    return [session_id for session_id, _ in sorted_sessions]
 
 
 # --- Data loading from ChromaDB -----------------------------------------------
@@ -95,17 +143,22 @@ def _load_trace_for_session(
         st.error(f"Could not open 'traces' collection: {e}")
         return []
 
-    where: Dict[str, Any] = {"session_id": session_id}
+    where: Dict[str, Any]
 
     # Optional timestamp filter
     if start_date or end_date:
-        ts_bounds: Dict[str, Any] = {}
+        ts_filters: List[Dict[str, Any]] = [{"session_id": session_id}]
         if start_date:
-            ts_bounds["$gte"] = _date_to_epoch(start_date)
+            ts_filters.append({"timestamp_epoch": {"$gte": _date_to_epoch(start_date)}})
         if end_date:
-            ts_bounds["$lte"] = _date_to_epoch(end_date, end_of_day=True)
-        if ts_bounds:
-            where["timestamp_epoch"] = ts_bounds
+            ts_filters.append({"timestamp_epoch": {"$lte": _date_to_epoch(end_date, end_of_day=True)}})
+
+        if len(ts_filters) == 1:
+            where = ts_filters[0]
+        else:
+            where = {"$and": ts_filters}
+    else:
+        where = {"session_id": session_id}
 
     results = collection.get(where=where, limit=max_steps)
     docs = results.get("documents") or []

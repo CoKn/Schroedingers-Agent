@@ -17,14 +17,31 @@ class LLMPlanner:
         self.llm = llm
         self._get_tool_docs = get_tool_docs
 
-    def _observation_history(self, session: AgentSession, N: int = 4) -> list[str]:
+    def _observation_history(self, session: AgentSession, N: int = 5) -> list[str]:
+        """Return recent raw tool results from the trace."""
+        all_obs = [
+            t.get("tool_result")
+            for t in (session.trace or [])
+            if isinstance(t, dict) and "tool_result" in t
+        ]
+        all_obs = [o for o in all_obs if o is not None]
         if N == -1:
-            return [t.get("observation") for t in (session.trace or []) if "observation" in t]
-        else:
-            return [t.get("observation") for t in (session.trace or []) if "observation" in t][-N:]
+            return all_obs
+        return all_obs[-N:]
+
     
     def _facts(self, session: AgentSession) -> list[str]:
-        return [f.get("facts") for f in (session.trace or []) if "facts" in f]
+        """Aggregate per-step facts stored on the trace."""
+        facts: list[str] = []
+        for t in (session.trace or []):
+            if not isinstance(t, dict):
+                continue
+            step_facts = t.get("facts")
+            if isinstance(step_facts, list):
+                for f in step_facts:
+                    facts.append(str(f))
+        return facts
+
 
     def format_context_note(self, session: AgentSession) -> str:
         """
@@ -64,7 +81,8 @@ class LLMPlanner:
         
         planning_spec = REGISTRY.get(*AgentPrompts.planning)
         planning_prompt = planning_spec.render(
-            user_goal=session.active_goal.value if session.active_goal else "",
+            global_goal=session.user_prompt,
+            step_goal=session.active_goal.value if session.active_goal else "",
             tool_name=session.active_goal.mcp_tool if session.active_goal else None,
             step_index=session.step_index,
             max_steps=session.max_steps,
@@ -95,7 +113,8 @@ class LLMPlanner:
 
         planning_spec = REGISTRY.get(*AgentPrompts.planning)
         planning_prompt = planning_spec.render(
-            user_goal=session.active_goal.value if session.active_goal else "",
+            global_goal=session.user_prompt,
+            step_goal=session.active_goal.value if session.active_goal else "",
             tool_name=None,
             step_index=session.step_index,
             max_steps=session.max_steps,
