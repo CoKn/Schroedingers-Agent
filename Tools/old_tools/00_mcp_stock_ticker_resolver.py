@@ -13,7 +13,7 @@ if not FMP_API_KEY:
     raise RuntimeError("Missing FMP_API_KEY environment variable.")
 
 mcp = FastMCP(
-    name="Financial Data & Valuation",
+    name="Stock Ticker Resolver",
     json_response=True
 )
 
@@ -97,4 +97,4 @@ def resolve_symbol(query: str) -> dict:
 # Run server
 # =============================================================
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8089)
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8086)
