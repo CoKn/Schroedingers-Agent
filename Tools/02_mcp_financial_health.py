@@ -294,4 +294,4 @@ def fmp_financial_growth(symbol: str) -> Dict:
 # Run server
 # =============================================================
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8086)
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8083)
