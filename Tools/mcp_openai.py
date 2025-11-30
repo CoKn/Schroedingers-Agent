@@ -68,35 +68,17 @@ service = PromptService()
 
 
 @mcp.tool()
-def prompt_llm(
-	prompt: str,
-	system_prompt: str | None = None,
-	model: str | None = None,
-	json_mode: bool = False,
-	max_tokens: int = 2048,
-	temperature: float = 0.2,
-	top_p: float = 1.0,
-) -> Dict[str, Any]:
-	"""Send a prompt to an OpenAI chat model and return the response."""
-
-	if max_tokens <= 0:
-		return {"error": "max_tokens must be positive."}
-	if not prompt.strip():
-		return {"error": "prompt cannot be empty."}
-	if temperature < 0 or temperature > 2:
-		return {"error": "temperature must be between 0 and 2."}
-	if top_p <= 0 or top_p > 1:
-		return {"error": "top_p must be within (0, 1]."}
+def summarise(prompt: str) -> Dict[str, Any]:
+	"""
+	Sends the context as prompt to an LLM to create reports and summaries.
+	
+	prompt: the context that the LLM should summarise
+	"""
 
 	return service.prompt(
 		prompt=prompt,
-		system_prompt=system_prompt,
-		model=model,
-		json_mode=json_mode,
-		max_tokens=max_tokens,
-		temperature=temperature,
-		top_p=top_p,
-	)
+		system_prompt="Summarise the following context."
+		)
 
 
 if __name__ == "__main__":

@@ -2,10 +2,14 @@ from fastmcp import FastMCP
 from typing import List, Dict
 
 import json
-from fastmcp import FastMCP
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+MOCK_DIR = BASE_DIR / "mock_data"
+
 
 def load_mock(name: str):
-    with open(f"Tools/mock_data/{name}.json") as f:
+    with open(MOCK_DIR / f"{name}.json") as f:
         return json.load(f)
 
 
@@ -59,6 +63,7 @@ def income_statement(symbol: str, limit: int | None = None, period: str | None =
 #  comps find peers
 @mcp.tool()
 def comps_find_peers(symbol: str, max_peers: int = 10) -> List[str]:
+    """Finds companies that have a similar performance."""
     return load_mock(f"peers_{symbol}")
 
 

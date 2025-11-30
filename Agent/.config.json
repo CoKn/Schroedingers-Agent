@@ -42,12 +42,18 @@
     }
   },
   {
-    "OpenAI_LLM": {
+    "LLM": {
       "type": "stdio",
       "command": "python",
       "args": ["mcp_openai.py"],
       "cwd": "Tools",
       "env": {}
+    }
+  },
+  {
+    "Notion": {
+      "type": "http",
+      "url": "http://localhost:8081/mcp/"
     }
   }
 ]

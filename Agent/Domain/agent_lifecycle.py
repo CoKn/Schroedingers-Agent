@@ -1,16 +1,20 @@
+# Agent/Domain/agent_lifecycle.py
 from Agent.Domain.agent_state_enum import AgentState
 from Agent.Domain.planning_mode_enum import PlanningMode
 from Agent.Domain.plan import Tree, Node
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
+from uuid import UUID, uuid4
 
 
+# TODO: refactor properties
 class AgentSession(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
     plan: Tree | None = None
     plan_revisions: list[Tree] = []
-    
+
+    session_id: UUID = Field(default_factory=uuid4)
     user_prompt: str
     state: AgentState = AgentState.PLANNING
     max_steps: int = 10
@@ -18,6 +22,8 @@ class AgentSession(BaseModel):
     tools_meta: list[dict] = Field(default_factory=list)
     last_decision: Optional[dict] = None
     last_observation: Optional[str] = None
+    last_step_summary: Optional[dict] = None
+    
     trace: List[dict] = []
     terminate: bool = False
     goal_reached: bool = False

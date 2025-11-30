@@ -13,7 +13,6 @@ mcp = FastMCP(
 )
 
 # MCP Tools
-@mcp.tool()
 def duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     """
     Search DuckDuckGo and return structured results.
@@ -36,7 +35,6 @@ def duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
             })
     return results
 
-@mcp.tool()
 def get_website_urls(url: str) -> List[str | AttributeValueList | None]:
     """Extracts all hyperlinks from a webpage.
 
@@ -72,7 +70,6 @@ def get_website_urls(url: str) -> List[str | AttributeValueList | None]:
     return urls[:5]
 
 
-@mcp.tool()
 def get_website_content(url: str) -> str:
     """Fetches a webpage and converts it to clean markdown text.
 
@@ -107,6 +104,31 @@ def get_website_content(url: str) -> str:
 
 
     return convert_to_markdown(str(soup))[:500]
+
+
+@mcp.tool()
+def search_web(query: str, max_results: int = 2) -> list[dict[str , str]]:
+    """Search the web using DuckDuckGo and return each result with scraped markdown content.
+
+    Args:
+        query: Search phrase to send to DuckDuckGo.
+        max_results: Maximum number of SERP entries to enrich (defaults to 2).
+
+    Returns:
+        A list where each item includes the DuckDuckGo fields (title, href, body)
+        plus a ``content`` key containing the cleaned markdown from the result URL.
+    """
+    results: list[dict[str, str]] = duckduckgo_search(query=query, max_results=max_results)
+    web_content: list[dict[str , str]] = []
+    for website in results:
+        url = website.get("href", None)
+        if not url:
+            continue
+        content: str = get_website_content(url=url)
+        data = website | {"content": content}
+        web_content.append(data)
+
+    return web_content
 
 
 if __name__ == "__main__":

@@ -212,3 +212,5 @@ Agent/.config.json
 
 .env_tokens
 test.py
+
+DB/*
