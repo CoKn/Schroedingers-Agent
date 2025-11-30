@@ -1,53 +1,51 @@
-[ 
+[
   {
     "Websearch_Scraping": {
       "type": "http",
-      "url":  "http://localhost:8082/mcp/"
+      "url": "http://localhost:8080/mcp/"
     }
   },
   {
-    "ValuationAnalysis": {
+    "Valuation_Analysis": {
+      "type": "http",
+      "url": "http://localhost:8081/mcp/"
+    }
+  },
+  {
+    "News_Sentiment": {
+      "type": "http",
+      "url": "http://localhost:8082/mcp/"
+    }
+  },
+  {
+    "Financial_Health": {
       "type": "http",
       "url": "http://localhost:8083/mcp/"
     }
   },
   {
-    "AlphaVantage": {
+    "Corporate_Strategy": {
+      "type": "http",
+      "url": "http://localhost:8084/mcp/"
+    }
+  },
+  {
+    "Reg_Compliance_Insider": {
       "type": "http",
       "url": "http://localhost:8085/mcp/"
     }
   },
   {
-    "FMP": {
-      "type": "http",
-      "url": "http://localhost:8086/mcp/"
-    }
-  },
-  {
-    "OpenCorporates": {
+    "Report_Generator": {
       "type": "http",
       "url": "http://localhost:8087/mcp/"
-    }
-  },
-  {
-    "SEC_EDGAR": {
-      "type": "http",
-      "url": "http://localhost:8088/mcp/"
-    }
-  },
-  {
-    "MA_Analytics": {
-      "type": "http",
-      "url": "http://localhost:8089/mcp/"
     }
   },
   {
     "LLM": {
       "type": "stdio",
       "command": "python",
-      "args": [
-        "mcp_openai.py"
-      ],
+      "args": ["mcp_openai.py"],
       "cwd": "Tools",
       "env": {}
     }
