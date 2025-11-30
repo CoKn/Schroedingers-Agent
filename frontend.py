@@ -473,42 +473,6 @@ def _build_plan_graph(tree_root: Dict[str, Any]):
 
 
 def render_plan_tree_section(plan: Dict[str, Any], plan_meta: Dict[str, Any]) -> None:
-    st.subheader("Plan Overview")
-
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.caption("Planning mode")
-        st.write(plan.get("planning_mode", "unknown"))
-    with col2:
-        st.caption("Total goals")
-        st.write(plan.get("total_goals", "—"))
-    with col3:
-        st.caption("Completed")
-        st.write(plan.get("completed_goals", "—"))
-    with col4:
-        st.caption("Remaining")
-        st.write(plan.get("remaining_goals", "—"))
-
-    if plan.get("current_goal"):
-        cur = plan["current_goal"]
-        st.markdown("### Current goal")
-        goal_text = cur.get("value") or cur.get("goal") or ""
-        colg1, colg2 = st.columns([3, 1])
-        with colg1:
-            st.markdown(f"> {goal_text}")
-            if cur.get("mcp_tool"):
-                st.caption(f"Tool: `{cur['mcp_tool']}`")
-        with colg2:
-            if cur.get("abstraction_score") is not None:
-                try:
-                    st.metric(
-                        "Abstraction score",
-                        f"{float(cur['abstraction_score']):.1f}",
-                    )
-                except Exception:
-                    st.metric("Abstraction score", str(cur["abstraction_score"]))
-
-    st.markdown("---")
     st.subheader("Hierarchical Plan Structure")
 
     tree_root = plan.get("tree_structure") or {}
@@ -650,41 +614,18 @@ def main() -> None:
         help="Choose a session present in the Chroma collections.",
     )
 
-    st.sidebar.markdown("**Timeline filters**")
-    max_steps = st.sidebar.number_input(
-        "Max steps to load",
-        min_value=1,
-        max_value=1000,
-        value=200,
-    )
-    use_date_filter = st.sidebar.checkbox("Filter by timestamp (UTC)", value=False)
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    if use_date_filter:
-        start_date = st.sidebar.date_input("Start date", value=date.today())
-        end_date = st.sidebar.date_input("End date", value=date.today())
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**Plan filters**")
-    plan_revision = st.sidebar.number_input(
-        "Plan revision (0 = latest)",
-        min_value=0,
-        value=0,
-        step=1,
-    )
-
     with st.spinner("Loading trace & plan from ChromaDB..."):
         trace_steps = _load_trace_for_session(
             client,
             session_id=session_id.strip(),
-            max_steps=int(max_steps),
-            start_date=start_date,
-            end_date=end_date,
+            max_steps=200,
+            start_date=None,
+            end_date=None,
         )
         plan, plan_meta = _load_plan_for_session(
             client,
             session_id=session_id.strip(),
-            desired_revision=int(plan_revision) or None,
+            desired_revision=None,
         )
 
     tab_timeline, tab_plan, tab_graph = st.tabs(["Timeline", "Plan Tree", "Plan Graph"])
