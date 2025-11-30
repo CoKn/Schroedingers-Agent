@@ -2,7 +2,6 @@ from fastmcp import FastMCP
 import os
 import requests
 import logging
-from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
