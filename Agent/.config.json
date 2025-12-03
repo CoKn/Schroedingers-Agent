@@ -53,7 +53,13 @@
   {
     "Notion": {
       "type": "http",
-      "url": "http://localhost:8081/mcp/"
+      "url": "http://localhost:8091/mcp/"
+    }
+  },
+  {
+    "Valuation_Analysis": {
+      "type": "http",
+      "url": "http://localhost:8093/mcp/"
     }
   }
 ]
