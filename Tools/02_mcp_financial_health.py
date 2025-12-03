@@ -1,50 +1,123 @@
 from fastmcp import FastMCP
 from typing import List, Dict
 import requests
-import statistics
 import os
 from dotenv import load_dotenv
 
 
-# -------------------------------------------------------------
+
+# ===================================================================
 # ENV + CONSTANTS
-# -------------------------------------------------------------
+# ===================================================================
 load_dotenv()
+
 FMP_API_KEY = os.getenv("FINANCIAL_MODELING_PREP_TOKEN")
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
 if not FMP_API_KEY:
-    raise RuntimeError("Missing FMP_API_KEY environment variable.")
+    raise RuntimeError("Missing FINANCIAL_MODELING_PREP_TOKEN environment variable.")
 
 mcp = FastMCP(
-    name="Financial Health",
+    name="Financial Health Intelligence",
     json_response=True
 )
 
-# -------------------------------------------------------------
-# FMP request wrapper
-# -------------------------------------------------------------
+
+
+# ===================================================================
+# INTERNAL HELPER — STANDARDIZED FMP GET WRAPPER
+# ===================================================================
 def fmp_get(endpoint: str, params: dict) -> list:
+    """
+    Standardized GET wrapper for FMP. Ensures:
+      • API key injection
+      • clean parameter handling
+      • uniform raising of HTTP errors
+    """
     params = {k: v for k, v in params.items() if v is not None}
     params["apikey"] = FMP_API_KEY
     url = f"{FMP_BASE}/{endpoint}"
+
     r = requests.get(url, params=params)
     r.raise_for_status()
     return r.json()
 
 
 
-# =============================================================
-# TOOL: fmp_key_metrics  (FINANCIAL HEALTH CHECK)
-# =============================================================
+# ===================================================================
+# TOOL 1 — get_company_key_metrics
+# ===================================================================
 @mcp.tool()
-def fmp_key_metrics(symbol: str) -> Dict:
+def get_company_key_metrics(symbol: str) -> Dict:
     """
-    Retrieve ONLY the latest essential financial key metrics for a company.
-    Stable format:
-        /key-metrics?symbol=AAPL
+    Retrieve the company's most recent essential financial key metrics.
+    
+    PURPOSE
+    -------
+    Provides a **minimal, stable, curated** subset of financial KPIs suitable
+    for M&A health assessment, screening, and automated reasoning.
 
-    Only the fields required for M&A financial health analysis are retained.
+    This tool intentionally returns **only the most decision-relevant fields**:
+      • Valuation
+      • Liquidity
+      • Profitability
+      • Capital efficiency
+      • Operating cycle components
+      • R&D behavior
+
+    INPUT
+    -----
+    symbol : str  
+        Public stock ticker (e.g., "AAPL", "MSFT").
+
+    OUTPUT (JSON)
+    -------------
+    {
+      "symbol": "<ticker>",
+      "date": "<YYYY-MM-DD>",
+      "fiscal_year": <int>,
+      "reported_currency": "<str>",
+
+      "market_cap": <float | null>,
+      "enterprise_value": <float | null>,
+      "ev_to_sales": <float | null>,
+      "ev_to_operating_cf": <float | null>,
+      "ev_to_fcf": <float | null>,
+      "ev_to_ebitda": <float | null>,
+      "net_debt_to_ebitda": <float | null>,
+
+      "current_ratio": <float | null>,
+      "working_capital": <float | null>,
+      "invested_capital": <float | null>,
+
+      "return_on_assets": <float | null>,
+      "operating_return_on_assets": <float | null>,
+      "return_on_equity": <float | null>,
+      "return_on_invested_capital": <float | null>,
+      "return_on_capital_employed": <float | null>,
+      "earnings_yield": <float | null>,
+
+      "research_and_development_to_revenue": <float | null>,
+      "average_receivables": <float | null>,
+      "average_payables": <float | null>,
+      "average_inventory": <float | null>,
+
+      "days_sales_outstanding": <float | null>,
+      "days_payables_outstanding": <float | null>,
+      "days_inventory_outstanding": <float | null>,
+      "operating_cycle": <float | null>,
+      "cash_conversion_cycle": <float | null>
+    }
+
+    AGENT USAGE GUIDE
+    -----------------
+    Use this tool when evaluating:
+      • baseline financial health
+      • liquidity strength
+      • profitability and return efficiency
+      • working capital behavior
+      • enterprise value positioning
+
     """
 
     data = fmp_get("key-metrics", {"symbol": symbol, "limit": 1})
@@ -59,7 +132,6 @@ def fmp_key_metrics(symbol: str) -> Dict:
         "fiscal_year": row.get("fiscalYear"),
         "reported_currency": row.get("reportedCurrency"),
 
-        # Valuation
         "market_cap": row.get("marketCap"),
         "enterprise_value": row.get("enterpriseValue"),
         "ev_to_sales": row.get("evToSales"),
@@ -68,12 +140,10 @@ def fmp_key_metrics(symbol: str) -> Dict:
         "ev_to_ebitda": row.get("evToEBITDA"),
         "net_debt_to_ebitda": row.get("netDebtToEBITDA"),
 
-        # Liquidity / Capital
         "current_ratio": row.get("currentRatio"),
         "working_capital": row.get("workingCapital"),
         "invested_capital": row.get("investedCapital"),
 
-        # Profitability / Returns
         "return_on_assets": row.get("returnOnAssets"),
         "operating_return_on_assets": row.get("operatingReturnOnAssets"),
         "return_on_equity": row.get("returnOnEquity"),
@@ -81,13 +151,11 @@ def fmp_key_metrics(symbol: str) -> Dict:
         "return_on_capital_employed": row.get("returnOnCapitalEmployed"),
         "earnings_yield": row.get("earningsYield"),
 
-        # R&D / Working Capital Behavior
         "research_and_development_to_revenue": row.get("researchAndDevelopementToRevenue"),
         "average_receivables": row.get("averageReceivables"),
         "average_payables": row.get("averagePayables"),
         "average_inventory": row.get("averageInventory"),
 
-        # Operating Cycle Components
         "days_sales_outstanding": row.get("daysOfSalesOutstanding"),
         "days_payables_outstanding": row.get("daysOfPayablesOutstanding"),
         "days_inventory_outstanding": row.get("daysOfInventoryOutstanding"),
@@ -96,18 +164,90 @@ def fmp_key_metrics(symbol: str) -> Dict:
     }
 
 
-# =============================================================
-# TOOL: fmp_insider_trading (RAW ROLE, NO CLASSIFICATION)
-# =============================================================
-@mcp.tool()
-def fmp_insider_trading(symbol: str) -> Dict:
-    """
-    Retrieve insider-trading data using:
-        /insider-trading/search
 
-    - No artificial role classification.
-    - Grouped strictly by FMP's `typeOfOwner` field.
-    - Adds `since`: the oldest transaction date in the dataset.
+# ===================================================================
+# TOOL 2 — get_company_insider_trading_activity
+# ===================================================================
+@mcp.tool()
+def get_detailed_insider_trading_activity(symbol: str) -> Dict:
+    """
+    Retrieve insider-trading data for a company (raw, unclassified).
+
+    PURPOSE
+    -------
+    Provides the **baseline raw insider activity dataset**:
+      • purchase vs. sale counts
+      • total values transacted
+      • full transaction list
+      • owners grouped by FMP's `typeOfOwner`
+
+    This is the *raw, factual feed* used for:
+      • M&A anomaly detection
+      • corporate governance risk evaluation
+      • signal-based heuristic reasoning
+
+    INPUT
+    -----
+    symbol : str  
+        Public stock ticker (e.g., "NVDA").
+
+    OUTPUT (JSON)
+    -------------
+    {
+      "symbol": "<ticker>",
+      "summary": {
+        "buy_count": <int>,
+        "sell_count": <int>,
+        "total_buy_value": <float>,
+        "total_sell_value": <float>,
+        "since": "<YYYY-MM-DD | null>"
+      },
+
+      "by_position": [
+        {
+          "position": "<FMP typeOfOwner>",
+          "buy_count": <int>,
+          "sell_count": <int>,
+          "total_buy_value": <float>,
+          "total_sell_value": <float>,
+          "names": ["<insider1>", "<insider2>", ...]
+        }
+      ],
+
+      "buys": [ {<full transaction>} ],
+      "sells": [ {<full transaction>} ]
+    }
+
+    Each transaction object contains:
+    {
+      "symbol": "<ticker>",
+      "filing_date": "<YYYY-MM-DD>",
+      "transaction_date": "<YYYY-MM-DD>",
+      "reporting_cik": "<string>",
+      "company_cik": "<string>",
+      "transaction_type": "<string>",
+      "securities_owned": <int | null>,
+      "reporting_name": "<string>",
+      "type_of_owner": "<string>",
+      "acquisition_or_disposition": "<A|D|null>",
+      "direct_or_indirect": "<D|I|null>",
+      "securities_transacted": <int>,
+      "price": <float>,
+      "value": <float>,
+      "security_name": "<string>",
+      "url": "<SEC filing URL>"
+    }
+
+    AGENT USAGE GUIDE
+    -----------------
+    Use this tool when evaluating:
+      • leadership behavior patterns
+      • potential red flags before M&A
+      • insider buying pressure (bullish signal)
+      • liquidation patterns (bearish or distress signal)
+      • alignment or misalignment with market conditions
+      • use this tool if the tool "sec_get_insider_activity_summary" shows unusual activity
+
     """
 
     data = fmp_get("insider-trading/search", {
@@ -121,18 +261,12 @@ def fmp_insider_trading(symbol: str) -> Dict:
 
     buys, sells = [], []
     all_dates = []
-
-    # -------------------------------------
-    # Aggregation structure by typeOfOwner
-    # -------------------------------------
     by_owner = {}
 
     for row in data:
-
         position = row.get("typeOfOwner") or "unknown"
         name = row.get("reportingName")
 
-        # Track unique categories
         if position not in by_owner:
             by_owner[position] = {
                 "position": position,
@@ -147,10 +281,8 @@ def fmp_insider_trading(symbol: str) -> Dict:
         if tx_date:
             all_dates.append(tx_date)
 
-        # Compute transaction value
         value = (row.get("price") or 0) * (row.get("securitiesTransacted") or 0)
 
-        # Transaction dict
         tx = {
             "symbol": row.get("symbol"),
             "filing_date": row.get("filingDate"),
@@ -170,36 +302,24 @@ def fmp_insider_trading(symbol: str) -> Dict:
             "url": row.get("url")
         }
 
-        # Track participant names
         if name:
             by_owner[position]["names"].add(name)
 
-        # Classify buy/sell based on FMP transaction codes
         ttype = (row.get("transactionType") or "").upper()
 
-        if ttype.startswith("P"):  # purchase
+        if ttype.startswith("P"):
             buys.append(tx)
             by_owner[position]["buy_count"] += 1
             by_owner[position]["total_buy_value"] += value
 
-        elif ttype.startswith("S"):  # sale
+        elif ttype.startswith("S"):
             sells.append(tx)
             by_owner[position]["sell_count"] += 1
             by_owner[position]["total_sell_value"] += value
 
-    # Convert name sets → lists
     for pos in by_owner.values():
         pos["names"] = list(pos["names"])
 
-    # Determine dataset range
-    dataset_since = min(all_dates) if all_dates else None
-
-    # Convert dict → list
-    by_position_list = list(by_owner.values())
-
-    # ---------------------------
-    # Final response
-    # ---------------------------
     return {
         "symbol": symbol,
         "summary": {
@@ -207,25 +327,94 @@ def fmp_insider_trading(symbol: str) -> Dict:
             "sell_count": len(sells),
             "total_buy_value": sum(t["value"] for t in buys),
             "total_sell_value": sum(t["value"] for t in sells),
-            "since": dataset_since
+            "since": min(all_dates) if all_dates else None
         },
-        "by_position": by_position_list,
+        "by_position": list(by_owner.values()),
         "buys": buys,
         "sells": sells
     }
 
 
-# =============================================================
-# TOOL: fmp_financial_growth (FULL FIELD SET)
-# =============================================================
-@mcp.tool()
-def fmp_financial_growth(symbol: str) -> Dict:
-    """
-    Retrieve complete financial growth data using:
-        /financial-growth?symbol=XYZ
 
-    This version preserves ALL fields as provided by FMP and included
-    in the user-provided JSON schema.
+# ===================================================================
+# TOOL 3 — get_company_financial_growth
+# ===================================================================
+@mcp.tool()
+def get_company_financial_growth(symbol: str) -> Dict:
+    """
+    Retrieve a complete financial-growth snapshot from FMP.
+
+    PURPOSE
+    -------
+    Provides the **broadest historical growth profile** of a company.
+    The entire FMP dataset is preserved to support:
+      • revenue/earnings trend analysis
+      • long-term growth evaluation
+      • performance benchmarking
+      • M&A due-diligence modeling
+
+    INPUT
+    -----
+    symbol : str  
+        Public ticker.
+
+    OUTPUT (JSON)
+    -------------
+    {
+      "symbol": "<str>",
+      "date": "<YYYY-MM-DD>",
+      "fiscal_year": <int>,
+      "reported_currency": "<str>",
+
+      "growth": {
+        "revenue_growth": <float>,
+        "gross_profit_growth": <float>,
+        "ebit_growth": <float>,
+        "operating_income_growth": <float>,
+        "net_income_growth": <float>,
+        "eps_growth": <float>,
+        "dividends_per_share_growth": <float>,
+        "operating_cf_growth": <float>,
+        "receivables_growth": <float>,
+        "inventory_growth": <float>,
+        "debt_growth": <float>,
+        "rd_expense_growth": <float>,
+        "sga_expense_growth": <float>,
+        "fcf_growth": <float>,
+
+        "tenY_revenue_growth_per_share": <float>,
+        "fiveY_revenue_growth_per_share": <float>,
+        "threeY_revenue_growth_per_share": <float>,
+
+        "tenY_operating_CF_growth_per_share": <float>,
+        "fiveY_operating_CF_growth_per_share": <float>,
+        "threeY_operating_CF_growth_per_share": <float>,
+
+        "tenY_net_income_growth_per_share": <float>,
+        "fiveY_net_income_growth_per_share": <float>,
+        "threeY_net_income_growth_per_share": <float>,
+
+        "tenY_shareholders_equity_growth_per_share": <float>,
+        "fiveY_shareholders_equity_growth_per_share": <float>,
+        "threeY_shareholders_equity_growth_per_share": <float>,
+
+        "tenY_dividend_per_share_growth_per_share": <float>,
+        "fiveY_dividend_per_share_growth_per_share": <float>,
+        "threeY_dividend_per_share_growth_per_share": <float>,
+
+        "ebitda_growth": <float>
+      }
+    }
+
+    AGENT USAGE GUIDE
+    -----------------
+    This tool should be used when analyzing:
+      • long-term trend stability  
+      • multi-year performance trajectory  
+      • investment attractiveness  
+      • sustained or declining growth patterns  
+      • strategic momentum  
+
     """
 
     data = fmp_get("financial-growth", {"symbol": symbol, "limit": 1})
@@ -241,7 +430,6 @@ def fmp_financial_growth(symbol: str) -> Dict:
         "reported_currency": row.get("reportedCurrency"),
 
         "growth": {
-            # Core growth fields
             "revenue_growth": row.get("revenueGrowth"),
             "gross_profit_growth": row.get("grossProfitGrowth"),
             "ebit_growth": row.get("ebitgrowth"),
@@ -250,20 +438,15 @@ def fmp_financial_growth(symbol: str) -> Dict:
             "eps_growth": row.get("epsgrowth"),
             "dividends_per_share_growth": row.get("dividendsPerShareGrowth"),
 
-            # Cash flow & working capital growth
             "operating_cf_growth": row.get("operatingCashFlowGrowth"),
             "receivables_growth": row.get("receivablesGrowth"),
             "inventory_growth": row.get("inventoryGrowth"),
             "debt_growth": row.get("debtGrowth"),
 
-            # Expense growth
             "rd_expense_growth": row.get("rdexpenseGrowth"),
             "sga_expense_growth": row.get("sgaexpensesGrowth"),
-
-            # Free cash flow
             "fcf_growth": row.get("freeCashFlowGrowth"),
 
-            # Long-term per-share growth trends
             "tenY_revenue_growth_per_share": row.get("tenYRevenueGrowthPerShare"),
             "fiveY_revenue_growth_per_share": row.get("fiveYRevenueGrowthPerShare"),
             "threeY_revenue_growth_per_share": row.get("threeYRevenueGrowthPerShare"),
@@ -284,14 +467,18 @@ def fmp_financial_growth(symbol: str) -> Dict:
             "fiveY_dividend_per_share_growth_per_share": row.get("fiveYDividendperShareGrowthPerShare"),
             "threeY_dividend_per_share_growth_per_share": row.get("threeYDividendperShareGrowthPerShare"),
 
-            # EBITDA growth (last)
             "ebitda_growth": row.get("ebitdaGrowth"),
         }
     }
 
 
-# =============================================================
-# Run server
-# =============================================================
+
+# ===================================================================
+# RUN SERVER
+# ===================================================================
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8083)
+    mcp.run(
+        transport="streamable-http",
+        host="0.0.0.0",
+        port=8083
+    )

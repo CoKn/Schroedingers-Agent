@@ -344,7 +344,7 @@ def sec_get_insider_activity_summary(cik: str) -> Dict:
         • suspicious in timing
 
     → Trigger replanning  
-    → Call: fmp_insider_trading(symbol)
+    → Call: get_detailed_insider_trading_activity(symbol)
     """
 
     cik = str(cik).zfill(10)
