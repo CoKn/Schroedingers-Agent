@@ -54,6 +54,12 @@
     }
   },
   {
+    "SEC_Intelligence": {
+      "type": "http",
+      "url": "http://localhost:8089/mcp/"
+    }
+  },
+  {
     "LLM": {
       "type": "stdio",
       "command": "python",
