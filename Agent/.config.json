@@ -36,9 +36,21 @@
     }
   },
   {
+    "Local_Latex_Builder": {
+      "type": "http",
+      "url": "http://localhost:8086/mcp/"
+    }
+  },
+  {
     "Report_Generator": {
       "type": "http",
       "url": "http://localhost:8087/mcp/"
+    }
+  },
+  {
+    "Gmail_Tool": {
+      "type": "http",
+      "url": "http://localhost:8088/mcp/"
     }
   },
   {
