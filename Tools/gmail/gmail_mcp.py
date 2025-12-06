@@ -8,7 +8,9 @@ from email.message import EmailMessage
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+
 
 
 # -------------------------------------------------
@@ -21,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 CREDENTIALS_PATH = BASE_DIR / "google_credentials.json"
 TOKEN_PATH = BASE_DIR / "token.json"
 
-REPORTS_DIR = Path(__file__).resolve().parents[1] / "Tools" / "reports"
+REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 
 mcp = FastMCP(
     name="Gmail Sender",
@@ -172,7 +174,18 @@ def send_email(to: str, subject: str, body: str, company_name: str) -> dict:
             "error": str(e)
         }
 
+# -------------------------------------------------
+# TOOL: check_email_status (needed for error correction)
+# -------------------------------------------------
+@mcp.tool()
+def check_email_status() -> dict:
+    return {
+        "success": False,
+        "error": "check_email_status tool is not implemented."
+    }
+
+
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8088)
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8095)
 
