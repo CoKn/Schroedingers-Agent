@@ -43,7 +43,7 @@ def alpha_get(params: dict) -> dict:
 
 
 # -------------------------------------------------------------
-# MCP Tool: altdata_news_sentiment
+# MCP Tool: alternative_data_news_sentiment
 # -------------------------------------------------------------
 @mcp.tool()
 def alternative_data_news_sentiment(
