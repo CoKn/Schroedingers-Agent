@@ -46,7 +46,7 @@ def alpha_get(params: dict) -> dict:
 # MCP Tool: altdata_news_sentiment
 # -------------------------------------------------------------
 @mcp.tool()
-def altdata_news_sentiment(
+def alternative_data_news_sentiment(
     tickers: str,
     limit: int = 50,
     sort: str = "LATEST"
