@@ -135,10 +135,10 @@ def fetch_company_metrics(symbol: str) -> dict:
 from typing import List, Literal
 
 # =============================================================
-# MCP TOOL: comps_find_peers
+# MCP TOOL: find_comparable_companies
 # =============================================================
 @mcp.tool()
-def comps_find_peers(
+def find_comparable_companies(
     symbol: str,
     max_peers: int = 10,
     approach: Literal["NORMAL", "CONSERVATIVE"] = "NORMAL"
@@ -180,7 +180,7 @@ def comps_find_peers(
     Returns
     -------
     List[str]
-        A list of peer tickers suitable for use in comps_valuation_range.
+        A list of peer tickers suitable for use in comparable_company_valuation.
 
     Agent Usage Notes
     -----------------
@@ -191,7 +191,7 @@ def comps_find_peers(
         • financial performance is uncertain,
         • strategic or operational risks are identified,
         • or when you want a tighter peer set for valuation discipline.
-    - This tool should be called BEFORE comps_valuation_range.
+    - This tool should be called BEFORE comparable_company_valuation.
     """
 
     # -------------------------------
@@ -259,10 +259,10 @@ def comps_find_peers(
 
 
 # =============================================================
-# MCP TOOL: comps_valuation_range
+# MCP TOOL: comparable_company_valuation
 # =============================================================
 @mcp.tool()
-def comps_valuation_range(
+def comparable_company_valuation(
     target: str,
     peers: List[str],
     primary_multiple: str = "ev_ebitda"
@@ -271,8 +271,8 @@ def comps_valuation_range(
     AGENT INSTRUCTIONS
     ------------------
     The agent MUST pass:
-    - target = EXACT ticker returned from resolve_symbol
-    - peers = EXACT list returned from comps_find_peers
+    - target = EXACT ticker returned from resolve_stock_ticker_symbol
+    - peers = EXACT list returned from find_comparable_companies
 
     The agent MUST NOT invent ticker symbols or modify the lists.
     The agent MUST call this tool only after both required inputs 
@@ -295,7 +295,7 @@ def comps_valuation_range(
         The ticker symbol of the company being valued.
     peers : List[str]
         A list of peer ticker symbols. Typically obtained from
-        comps_find_peers.
+        find_comparable_companies.
     primary_multiple : str
         Reserved for future expansion. Currently only "ev_ebitda" is used.
 
@@ -319,7 +319,7 @@ def comps_valuation_range(
 
     Agent Usage Notes
     -----------------
-    - Call comps_find_peers first to obtain the peer list.
+    - Call find_comparable_companies first to obtain the peer list.
     - Use the exact output list from comps_find_peers as the `peers` argument.
     - The tool will only compute multiples for peers with positive EBITDA.
     - Use the resulting valuation range to analyze whether the company
@@ -359,10 +359,10 @@ def comps_valuation_range(
     }
 
 # =============================================================
-# MCP TOOL: resolve_symbol
+# MCP TOOL: resolve_stock_ticker_symbol
 # =============================================================
 @mcp.tool()
-def resolve_symbol(query: str) -> dict:
+def resolve_stock_ticker_symbol(query: str) -> dict:
     """
     Resolve a company name into the most appropriate ticker symbol.
     """
