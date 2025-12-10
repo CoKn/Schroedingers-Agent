@@ -171,7 +171,7 @@ async def agent_run_ws(websocket: WebSocket, _: None = Depends(auth_ws)):
         # Create a dedicated EventBus for this session
         events = EventBus()
         service = AgentService(llm=llm_client, mcp=mcp_client, memory=chromadb, events=events)
-        session = AgentSession(user_prompt=prompt, max_steps=5)
+        session = AgentSession(user_prompt=prompt, max_steps=20)
 
         async def pump_events() -> None:
             """
@@ -288,7 +288,7 @@ async def agent_run(req: PromptRequest):
 
     try:
         service = AgentService(llm=llm_client, mcp=mcp_client, memory=chromadb)
-        session = AgentSession(user_prompt=req.prompt, max_steps=15)
+        session = AgentSession(user_prompt=req.prompt, max_steps=20)
         result, trace = await asyncio.wait_for(service.loop_run(session), timeout=600.0)
         return {"result": result, "trace": trace}
     except asyncio.TimeoutError:
