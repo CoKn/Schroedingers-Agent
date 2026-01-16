@@ -2,7 +2,7 @@
   {
     "Websearch_Scraping": {
       "type": "http",
-      "url": "http://localhost:8080/mcp/"
+      "url": "http://localhost:8090/mcp/"
     }
   },
   {
@@ -26,7 +26,7 @@
   {
     "Corporate_Strategy": {
       "type": "http",
-      "url": "http://localhost:8084/mcp/"
+      "url": "http://localhost:8984/mcp/"
     }
   },
   {
@@ -71,7 +71,13 @@
   {
     "Notion": {
       "type": "http",
-      "url": "http://localhost:8081/mcp/"
+      "url": "http://localhost:8091/mcp/"
+    }
+  },
+  {
+    "Valuation_Analysis": {
+      "type": "http",
+      "url": "http://localhost:8093/mcp/"
     }
   }
 ]

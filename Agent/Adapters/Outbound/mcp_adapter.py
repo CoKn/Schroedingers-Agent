@@ -116,7 +116,7 @@ class MCPAdapter(BaseModel):
                     except asyncio.TimeoutError:
                         logger.error("Timeout connecting to Stdio server %s", server_name)
                         # One retry with timeout, mirroring your original behavior
-                        await asyncio.wait_for(client.connect(conf), timeout=30)
+                        await asyncio.wait_for(client.connect(conf), timeout=45)
                         continue
 
                 else:
