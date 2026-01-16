@@ -215,10 +215,5 @@ test.py
 
 DB/*
 
-# Ignore generated LaTeX reports
-Tools/reports/
-
 Tools/gmail/google_credentials.json
 Tools/gmail/token.json
-
-start_all_mcp.sh
