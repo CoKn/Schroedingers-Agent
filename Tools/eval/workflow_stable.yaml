@@ -1,0 +1,34 @@
+workflow:
+
+  - id: initial_valuation
+    tools: [resolve_stock_ticker_symbol, find_comparable_companies, comparable_company_valuation]
+
+  - id: financial_health
+    tools: [get_company_key_metrics, get_company_financial_growth]
+
+  - id: corporate_strategy
+    tools: [sec_lookup_company_cik_by_ticker, sec_extract_company_strategy_sections_from_filings]
+
+  - id: regulatory_check
+    tools: [sec_lookup_company_cik_by_ticker, sec_get_insider_activity_summary]
+
+  - id: suspicious_branch
+    type: branch
+    condition: suspicious_activity
+    yes:
+
+      - id: confirmation_step
+        tools: [get_detailed_insider_trading_activity, alternative_data_news_sentiment]
+
+      - id: suspicious_confirmed_branch
+        type: branch
+        condition: suspicious_activity_confirmed
+        yes:
+          - id: conservative_revaluation
+            tools: [find_comparable_companies, comparable_company_valuation]
+        no: []
+
+    no: []
+
+  - id: final_recommendation
+    tools: [summarise]

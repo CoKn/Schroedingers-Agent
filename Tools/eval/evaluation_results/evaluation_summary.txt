@@ -1,0 +1,14 @@
+M&A Agent Evaluation Summary
+============================================================
+Evaluation completed: 2026-01-02 00:01:43
+
+DETAILED: 10 runs
+MEDIUM: 10 runs
+ABSTRACT: 10 runs
+
+Result files:
+  - results_detailed.jsonl
+  - results_medium.jsonl
+  - results_abstract.jsonl
+
+Use analysis scripts to evaluate these results.
