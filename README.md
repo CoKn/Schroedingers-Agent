@@ -122,14 +122,6 @@ curl -sS -X POST http://localhost:8080/call \
   -d '{"prompt":"Hello"}' | jq
 ```
 
-LLM + MCP (REST):
-```bash
-curl -sS -X POST http://localhost:8080/call_mcp \
-  -H 'Authorization: Bearer devtoken123' \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"Run a valuation analysis and financial health check for ticker SNOW"}' | jq
-```
-
 Agent multi-step (REST):
 ```bash
 curl -sS -X POST http://localhost:8080/agent \
@@ -142,9 +134,6 @@ WebSocket streaming (token via query param):
 ```bash
 # LLM streaming
 # ws://localhost:8080/ws/call?token=devtoken123
-
-# LLM + MCP streaming
-# ws://localhost:8080/ws/call_mcp?token=devtoken123
 
 # Agent streaming (progress + final)
 # ws://localhost:8080/ws/agent?token=devtoken123
