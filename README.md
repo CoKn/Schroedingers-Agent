@@ -65,7 +65,7 @@ If you plan to use Gmail-related MCP tools, you need to set up Google API creden
 
 a. Create a Google Cloud project and enable the Gmail API
 b. Create OAuth 2.0 credentials (Desktop application type)
-c. Download the credentials and save as `credentials.json` in the project root:
+c. Download the credentials and save as `Tools/gmail/google_credentials.json`:
 ```json
 {
   "installed": {
@@ -79,7 +79,7 @@ c. Download the credentials and save as `credentials.json` in the project root:
 }
 ```
 
-d. On first run, you'll be prompted to authorize the application. This will create a `token.json` file:
+d. On first run, you'll be prompted to authorize the application. This will create `Tools/gmail/token.json`:
 ```json
 {
   "token": "<access-token>",
@@ -194,7 +194,9 @@ The app expects the ChromaDB files in the local `DB/` directory by default.
 - **GMAIL_CLIENT_ID**: OAuth 2.0 client ID from Google Cloud Console
 - **GMAIL_CLIENT_SECRET**: OAuth 2.0 client secret from Google Cloud Console
 
-Additionally, you need `credentials.json` and `token.json` files (see step 4 above).
+Additionally, you need credential files in the `Tools/gmail/` directory:
+- `Tools/gmail/google_credentials.json` - OAuth client configuration
+- `Tools/gmail/token.json` - Generated after first authentication (auto-created)
 
 ## API Overview
 
@@ -271,6 +273,7 @@ Additional utilities:
 
 - `frontend.py` — Streamlit UI to inspect stored plans/traces from ChromaDB (`DB/`)
 - `Tools/*.py` — MCP servers and related utilities used by the agent; they can be run individually with `python Tools/<name>.py` or together via `tools.sh` (some require extra API keys as noted above)
+- `Tools/gmail/` — Gmail integration files including OAuth credentials
 
 ## Troubleshooting
 
@@ -278,7 +281,7 @@ Additional utilities:
 - **503 MCP services not available**: Start the MCP server first (`bash tools.sh`) and restart the API
 - **ValueError: `LLM_PROVIDER` missing**: Set `LLM_PROVIDER` to `OPENAI` or `AZURE_OPENAI` in `.env`
 - **Missing API keys**: Ensure all required keys in `.env` are populated (check error messages for specific missing keys)
-- **Gmail authentication errors**: Verify `credentials.json` is present and properly formatted; delete `token.json` and re-authenticate if needed
+- **Gmail authentication errors**: Verify `Tools/gmail/google_credentials.json` is present and properly formatted; delete `Tools/gmail/token.json` and re-authenticate if needed
 - **Timeouts (500)**: Requests to MCP or the LLM exceeded the configured timeout; try again or simplify prompts
 
 ## Notes
