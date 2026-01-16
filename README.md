@@ -16,8 +16,7 @@ Python 3.12+ are supported (as pinned in `pyproject.toml`). The LLM can be eithe
 - Python 3.12
 - [`uv`](https://github.com/astral-sh/uv) package manager (install via `brew install uv` or `pipx install uv`)
 
-1. Install dependencies
-
+2. Install dependencies
 ```bash
 # Create a virtual environment and install project deps from pyproject.toml/uv.lock
 uv venv
@@ -25,36 +24,77 @@ source .venv/bin/activate
 uv sync
 ```
 
-1. Configure environment
+3. Configure environment
 
-Create a `.env` file in the repo root. Choose a provider and set the corresponding variables.
+Create a `.env` file in the repo root with the following variables:
+```dotenv
+# API Authentication
+API_BEARER_TOKEN=
 
-Required (all modes):
+# LLM Configuration
+LLM_PROVIDER=OPENAI
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=
+OPENAI_API_KEY_TWO=
 
-```bash
-API_BEARER_TOKEN=devtoken123
-LLM_PROVIDER=AZURE_OPENAI   # or OPENAI
-LLM_MODEL=<deployment-or-model-name>
+# Financial Data APIs
+ALPHAVANTAGE_API_KEY=
+FINANCIAL_MODELING_PREP_TOKEN=
+SEC_USER_AGENT=
+SEC_API_KEY=
+
+# Gmail Integration (optional)
+GMAIL_ADDRESS=
+GMAIL_PASSWORD=
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
 ```
 
-If LLM_PROVIDER=AZURE_OPENAI:
-
-```bash
+**Note:** If using Azure OpenAI instead, replace the OpenAI variables with:
+```dotenv
+LLM_PROVIDER=AZURE_OPENAI
+LLM_MODEL=<deployment-name>
 AZURE_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/
 AZURE_API_KEY=<your-azure-openai-key>
 AZURE_API_VERSION=2024-08-01-preview
 ```
 
-If LLM_PROVIDER=OPENAI:
+4. Configure Gmail Integration (Optional)
 
-```bash
-OPENAI_API_KEY=<your-openai-api-key>
+If you plan to use Gmail-related MCP tools, you need to set up Google API credentials:
+
+a. Create a Google Cloud project and enable the Gmail API
+b. Create OAuth 2.0 credentials (Desktop application type)
+c. Download the credentials and save as `credentials.json` in the project root:
+```json
+{
+  "installed": {
+    "client_id": "<your-client-id>",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_secret": "<your-client-secret>",
+    "redirect_uris": ["http://localhost"]
+  }
+}
 ```
 
-The FastAPI app reads these values from `.env` at startup (see `dotenv.load_dotenv()` in `Agent/API/api.py`).
+d. On first run, you'll be prompted to authorize the application. This will create a `token.json` file:
+```json
+{
+  "token": "<access-token>",
+  "refresh_token": "<refresh-token>",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "client_id": "<your-client-id>",
+  "client_secret": "<your-client-secret>",
+  "scopes": ["https://www.googleapis.com/auth/gmail.send"],
+  "universe_domain": "googleapis.com",
+  "account": "<your-email>",
+  "expiry": "<expiry-timestamp>"
+}
+```
 
-1. Start the MCP tools
-
+5. Start the MCP tools
 ```bash
 bash tools.sh
 # or
@@ -63,8 +103,7 @@ bash tools.sh
 
 This script starts the main MCP servers under `Tools/` (valuation analysis, financial health, news sentiment, report generation, etc.) in the background.
 
-1. Start the API
-
+6. Start the API
 ```bash
 bash start.sh
 # or
@@ -73,10 +112,9 @@ uvicorn Agent.API.api:app --host 0.0.0.0 --port 8080 --reload
 
 By default, the API persists agent traces and plans to a local ChromaDB database under the `DB/` directory. This directory is created automatically on first run.
 
-1. Try the API (Bearer auth required)
+7. Try the API (Bearer auth required)
 
 Plain LLM (REST):
-
 ```bash
 curl -sS -X POST http://localhost:8080/call \
   -H 'Authorization: Bearer devtoken123' \
@@ -85,7 +123,6 @@ curl -sS -X POST http://localhost:8080/call \
 ```
 
 LLM + MCP (REST):
-
 ```bash
 curl -sS -X POST http://localhost:8080/call_mcp \
   -H 'Authorization: Bearer devtoken123' \
@@ -94,7 +131,6 @@ curl -sS -X POST http://localhost:8080/call_mcp \
 ```
 
 Agent multi-step (REST):
-
 ```bash
 curl -sS -X POST http://localhost:8080/agent \
   -H 'Authorization: Bearer devtoken123' \
@@ -103,7 +139,6 @@ curl -sS -X POST http://localhost:8080/agent \
 ```
 
 WebSocket streaming (token via query param):
-
 ```bash
 # LLM streaming
 # ws://localhost:8080/ws/call?token=devtoken123
@@ -120,7 +155,6 @@ WebSocket streaming (token via query param):
 This repo includes a Streamlit app for visualizing agent plans and traces stored in ChromaDB.
 
 With the virtual environment activated and the API having produced some runs (so `DB/` has data), start it with:
-
 ```bash
 streamlit run frontend.py
 ```
@@ -129,23 +163,38 @@ The app expects the ChromaDB files in the local `DB/` directory by default.
 
 ## Configuration Reference
 
-- LLM_PROVIDER: AZURE_OPENAI or OPENAI (required)
-- LLM_MODEL: Azure deployment name (for AZURE_OPENAI) or model name (for OPENAI)
-- API_BEARER_TOKEN: static token for REST and WS auth
+### Required Variables
 
-Azure OpenAI (when LLM_PROVIDER=AZURE_OPENAI):
+- **API_BEARER_TOKEN**: Static token for REST and WebSocket authentication
+- **LLM_PROVIDER**: `OPENAI` or `AZURE_OPENAI`
+- **LLM_MODEL**: Model name (OpenAI) or deployment name (Azure)
 
-- AZURE_ENDPOINT: e.g. `https://YOUR_RESOURCE_NAME.openai.azure.com/`
-- AZURE_API_KEY: your Azure OpenAI key
-- AZURE_API_VERSION: e.g. 2024-08-01-preview
+### LLM Provider Configuration
 
-OpenAI (when LLM_PROVIDER=OPENAI):
+**OpenAI:**
+- **OPENAI_API_KEY**: Your OpenAI API key
+- **OPENAI_API_KEY_TWO**: Secondary API key (for fallback/load balancing)
 
-- OPENAI_API_KEY: your OpenAI key
+**Azure OpenAI:**
+- **AZURE_ENDPOINT**: e.g. `https://YOUR_RESOURCE_NAME.openai.azure.com/`
+- **AZURE_API_KEY**: Your Azure OpenAI key
+- **AZURE_API_VERSION**: e.g. `2024-08-01-preview`
 
-Put these in `.env` or export them in your shell before starting the API.
+### Financial Data APIs
 
-Other tools under `Tools/` may require additional API keys (for example, some financial MCP servers read tokens like `FINANCIAL_MODELING_PREP_TOKEN` from your environment). Check the individual tool Python files for their specific requirements.
+- **ALPHAVANTAGE_API_KEY**: Alpha Vantage API key for market data
+- **FINANCIAL_MODELING_PREP_TOKEN**: Financial Modeling Prep API token
+- **SEC_USER_AGENT**: User agent string for SEC EDGAR API (format: `Name email@example.com`)
+- **SEC_API_KEY**: SEC API key (if required by your tools)
+
+### Gmail Integration (Optional)
+
+- **GMAIL_ADDRESS**: Gmail account email
+- **GMAIL_PASSWORD**: Gmail account password or app-specific password
+- **GMAIL_CLIENT_ID**: OAuth 2.0 client ID from Google Cloud Console
+- **GMAIL_CLIENT_SECRET**: OAuth 2.0 client secret from Google Cloud Console
+
+Additionally, you need `credentials.json` and `token.json` files (see step 4 above).
 
 ## API Overview
 
@@ -202,7 +251,6 @@ Responses from `/agent` include:
 ## MCP Tools
 
 The main MCP servers live under `Tools/` and are started via:
-
 ```bash
 bash tools.sh
 ```
@@ -226,13 +274,15 @@ Additional utilities:
 
 ## Troubleshooting
 
-- 401 Unauthorized: Missing/incorrect `Authorization: Bearer` header (REST) or `?token=` query (WS)
-- 503 MCP services not available: Start the MCP server first (`python Tools/test_server.py`) and restart the API
-- ValueError: `LLM_PROVIDER` missing: Set `LLM_PROVIDER` to `OPENAI` or `AZURE_OPENAI` in `.env`
-- Timeouts (500): Requests to MCP or the LLM exceeded the configured timeout; try again or simplify prompts
+- **401 Unauthorized**: Missing/incorrect `Authorization: Bearer` header (REST) or `?token=` query (WS)
+- **503 MCP services not available**: Start the MCP server first (`bash tools.sh`) and restart the API
+- **ValueError: `LLM_PROVIDER` missing**: Set `LLM_PROVIDER` to `OPENAI` or `AZURE_OPENAI` in `.env`
+- **Missing API keys**: Ensure all required keys in `.env` are populated (check error messages for specific missing keys)
+- **Gmail authentication errors**: Verify `credentials.json` is present and properly formatted; delete `token.json` and re-authenticate if needed
+- **Timeouts (500)**: Requests to MCP or the LLM exceeded the configured timeout; try again or simplify prompts
 
 ## Notes
 
 - Python: `.python-version` pins 3.12; use that for local dev
 - The API connects to MCP during app startup and keeps a background task for readiness
-- Adjust ports as needed: API `8080`, MCP `8081`
+- Adjust ports as needed: API `8080`, MCP tools typically run on ports `8081+`
