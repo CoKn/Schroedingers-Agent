@@ -35,7 +35,6 @@ API_BEARER_TOKEN=
 LLM_PROVIDER=OPENAI
 LLM_MODEL=gpt-4o-mini
 OPENAI_API_KEY=
-OPENAI_API_KEY_TWO=
 
 # Financial Data APIs
 ALPHAVANTAGE_API_KEY=
@@ -200,16 +199,11 @@ Endpoints:
   - Body: `{ "prompt": "..." }`
   - Returns: `{ result: string, trace: null, plan: null }`
 
-- POST `/call_mcp` -> LLM call with MCP-enabled processing
-  - Body: `{ "prompt": "..." }`
-  - Returns: `{ result: string, trace: object }` (503 if MCP not ready)
-
 - POST `/agent` -> Multi-step agent run
   - Body: `{ "prompt": "..." }`
   - Returns: `{ result: string, trace: array, plan: object|null }`
 
 - WS `/ws/call` -> Streaming tokens from LLM
-- WS `/ws/call_mcp` -> Streaming tokens + MCP traces
 - WS `/ws/agent` -> Progress events and final payload
 
 Auxiliary:
